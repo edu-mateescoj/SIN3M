@@ -1,0 +1,32 @@
+{
+  "corpusId": "CORPUS-FICTIF-V1",
+  "title": "Journal fictif de démonstration",
+  "version": "1.0.0",
+  "documents": [
+    {
+      "documentId": "JOURNAL-DEMO",
+      "label": "Journal fictif",
+      "sourceUnitId": "CAHIER-A",
+      "entries": [
+        {
+          "entryId": "ENTREE-0001",
+          "date": "1934-03-12",
+          "sourceLabel": "Cahier A — entrée 1",
+          "text": "Ce matin, je suis parti plus tôt que d'habitude. La cour était encore vide et j'ai apprécié ce silence. À midi, la discussion avec Camille m'a contrarié ; je n'ai pas su répondre comme je l'aurais voulu. Le soir, revenu à la maison, j'ai préféré rester seul pour écrire quelques lignes."
+        },
+        {
+          "entryId": "ENTREE-0002",
+          "date": "1934-03-19",
+          "sourceLabel": "Cahier A — entrée 2",
+          "text": "Une semaine a passé. J'ai revu Camille à l'école et notre conversation a été étonnamment légère. Ce qui m'avait paru si grave l'autre jour semble maintenant presque sans importance. En rentrant, j'ai raconté l'épisode à ma sœur et nous en avons ri longtemps."
+        },
+        {
+          "entryId": "ENTREE-0003",
+          "date": "1934-04-02",
+          "sourceLabel": "Cahier A — entrée 3",
+          "text": "La maison était pleine de visiteurs cet après-midi. Je suis resté avec eux un moment puis je me suis retiré dans ma chambre. J'étais heureux de les entendre parler derrière la porte, tout en étant soulagé de retrouver un espace à moi."
+        }
+      ]
+    }
+  ]
+}
