@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; connect-src 'none'; img-src 'self' data: blob:; media-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob:; media-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
   <title>JournalLab — MVP1</title>
   <style>
     :root{font-family:Arial,Helvetica,sans-serif;color:#1f2937;background:#f5f6f8}
     *{box-sizing:border-box} body{margin:0} button,input,select,textarea{font:inherit}
     header{padding:16px 20px;background:#fff;border-bottom:1px solid #d7dbe0;position:sticky;top:0;z-index:2}
-    header h1{font-size:1.3rem;margin:0 0 8px} .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    header h1{font-size:1.3rem;margin:0 0 8px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     button,.file-label{border:1px solid #9aa3ad;background:#fff;padding:8px 12px;border-radius:7px;cursor:pointer}
-    button.primary{background:#202a35;color:#fff;border-color:#202a35} button:disabled{opacity:.45;cursor:not-allowed}
-    .file-label input{display:none}.status{font-size:.9rem;margin-left:auto}
+    button.primary{background:#202a35;color:#fff;border-color:#202a35}button:disabled{opacity:.45;cursor:not-allowed}
+    .file-label input{display:none}.status{font-size:.9rem;margin-left:auto}.warning{margin:10px 0 0;padding:9px 11px;border:1px solid #d7b56d;background:#fff7df;border-radius:7px;font-size:.88rem;display:none}
     main{display:grid;grid-template-columns:260px minmax(0,1fr) 360px;gap:14px;padding:14px;min-height:calc(100vh - 90px)}
     section,aside{background:#fff;border:1px solid #d7dbe0;border-radius:9px;padding:14px;min-width:0}
     h2{font-size:1.05rem;margin:0 0 12px}.entries{display:flex;flex-direction:column;gap:7px}.entry-btn{text-align:left;width:100%}.entry-btn.active{font-weight:bold;border-color:#202a35}
     .meta{font-size:.9rem;color:#5d6874;margin-bottom:15px}.text{font-family:Georgia,'Times New Roman',serif;font-size:1.12rem;line-height:1.75;white-space:pre-wrap;user-select:text;padding:10px 2px;min-height:180px}
     .selection{background:#f4f1d8;border-left:4px solid #b6a84c;padding:10px;margin:10px 0;font-family:Georgia,'Times New Roman',serif;max-height:120px;overflow:auto;white-space:pre-wrap}
-    label.field{display:block;margin:10px 0;font-weight:600;font-size:.92rem} label.field select,label.field input,label.field textarea{display:block;width:100%;margin-top:5px;font-weight:400;border:1px solid #aeb6bf;border-radius:6px;padding:8px;background:#fff}
+    label.field{display:block;margin:10px 0;font-weight:600;font-size:.92rem}label.field select,label.field input,label.field textarea{display:block;width:100%;margin-top:5px;font-weight:400;border:1px solid #aeb6bf;border-radius:6px;padding:8px;background:#fff}
     textarea{min-height:90px;resize:vertical}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.hint{font-size:.84rem;color:#68727d}.log{margin-top:12px;padding:10px;background:#111827;color:#e5e7eb;border-radius:7px;min-height:80px;max-height:180px;overflow:auto;font:12px/1.45 Consolas,monospace;white-space:pre-wrap}.pill{display:inline-block;padding:2px 7px;border:1px solid #c9ced4;border-radius:999px;font-size:.8rem;margin:2px}
-    @media(max-width:1000px){main{grid-template-columns:220px 1fr}aside{grid-column:1/-1}} @media(max-width:700px){main{display:block}section,aside{margin-bottom:12px}.status{width:100%;margin-left:0}}
+    @media(max-width:1000px){main{grid-template-columns:220px 1fr}aside{grid-column:1/-1}}@media(max-width:700px){main{display:block}section,aside{margin-bottom:12px}.status{width:100%;margin-left:0}}
   </style>
 </head>
 <body>
@@ -32,6 +32,7 @@
     <button id="exportBtn">Exporter la remise</button>
     <span id="status" class="status">Corpus non chargé · Workspace non choisi</span>
   </div>
+  <div id="fsWarning" class="warning"></div>
 </header>
 <main>
   <section>
@@ -61,74 +62,79 @@
     <label class="field">Commentaire de l'élève<textarea id="comment" placeholder="Analyse, justification, remarque…"></textarea></label>
     <button id="saveAnnotation" class="primary" disabled>Enregistrer l'annotation</button>
     <div id="annotationCount" class="hint" style="margin-top:8px">0 annotation enregistrée.</div>
-    <div id="log" class="log">MVP1 prêt. Aucun réseau n'est nécessaire.</div>
+    <div id="log" class="log">MVP1 prêt.</div>
   </aside>
 </main>
 <script>
 'use strict';
-let corpus=null, currentDoc=null, currentEntry=null, workspaceHandle=null, selectionState=null, annotations=[];
+let corpus=null,currentDoc=null,currentEntry=null,workspaceHandle=null,selectionState=null,annotations=[];
 const $=id=>document.getElementById(id);
-const log=msg=>{const t=new Date().toLocaleTimeString('fr-FR'); $('log').textContent += `\n[${t}] ${msg}`; $('log').scrollTop=$('log').scrollHeight;};
+const log=msg=>{const t=new Date().toLocaleTimeString('fr-FR');$('log').textContent+=`\n[${t}] ${msg}`;$('log').scrollTop=$('log').scrollHeight;};
 const csv=s=>s.split(',').map(x=>x.trim()).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
-function updateStatus(){ $('status').textContent=`${corpus?'Corpus chargé':'Corpus non chargé'} · ${workspaceHandle?'Workspace : '+workspaceHandle.name:'Workspace non choisi'}`; }
-function uuid(){return globalThis.crypto?.randomUUID?.() || `ANN-${Date.now()}-${Math.random().toString(16).slice(2)}`;}
+function updateStatus(){$('status').textContent=`${corpus?'Corpus chargé':'Corpus non chargé'} · ${workspaceHandle?'Workspace : '+workspaceHandle.name:'Workspace non choisi'}`;}
+function uuid(){return globalThis.crypto?.randomUUID?.()||`ANN-${Date.now()}-${Math.random().toString(16).slice(2)}`;}
+function detectFilesystemApi(){
+  const available=typeof window.showDirectoryPicker==='function';
+  log(`URL : ${location.href}`);
+  log(`Protocole : ${location.protocol}`);
+  log(`Contexte sécurisé : ${window.isSecureContext?'OUI':'NON'}`);
+  log(`showDirectoryPicker disponible : ${available?'OUI':'NON'}`);
+  if(!available){
+    const warning=$('fsWarning');warning.style.display='block';
+    warning.textContent=location.protocol==='file:'
+      ? 'Ce navigateur n’expose pas l’accès direct aux dossiers depuis file://. Pour ce poste, lancez JournalLab via http://127.0.0.1 (par exemple avec Live Server).'
+      : 'Ce navigateur ou cette politique système n’expose pas showDirectoryPicker(). Le mode import/export devra être utilisé.';
+  }
+  return available;
+}
 
 $('corpusFile').addEventListener('change',async e=>{
-  const file=e.target.files[0]; if(!file)return;
-  try{corpus=JSON.parse(await file.text()); renderEntries(); updateStatus(); log(`Corpus chargé : ${corpus.title||corpus.corpusId}`);}catch(err){alert('Corpus JSON invalide.');log(`ERREUR corpus : ${err.message}`);}
+  const file=e.target.files[0];if(!file)return;
+  try{corpus=JSON.parse(await file.text());renderEntries();updateStatus();log(`Corpus chargé : ${corpus.title||corpus.corpusId}`);}catch(err){alert('Corpus JSON invalide.');log(`ERREUR corpus : ${err.message}`);}
 });
 
 function renderEntries(){
-  const box=$('entries'); box.innerHTML='';
-  for(const doc of corpus.documents||[]){
-    for(const entry of doc.entries||[]){
-      const b=document.createElement('button'); b.className='entry-btn';
-      b.textContent=`${entry.date||'sans date'} — ${entry.sourceLabel||entry.entryId}`;
-      b.onclick=()=>openEntry(doc,entry,b); box.appendChild(b);
-    }
-  }
-  if(!box.children.length) box.textContent='Aucune entrée.';
+  const box=$('entries');box.innerHTML='';
+  for(const doc of corpus.documents||[]){for(const entry of doc.entries||[]){
+    const b=document.createElement('button');b.className='entry-btn';b.textContent=`${entry.date||'sans date'} — ${entry.sourceLabel||entry.entryId}`;b.onclick=()=>openEntry(doc,entry,b);box.appendChild(b);
+  }}
+  if(!box.children.length)box.textContent='Aucune entrée.';
 }
 function openEntry(doc,entry,button){
-  currentDoc=doc; currentEntry=entry; selectionState=null;
-  document.querySelectorAll('.entry-btn').forEach(x=>x.classList.remove('active')); button.classList.add('active');
+  currentDoc=doc;currentEntry=entry;selectionState=null;
+  document.querySelectorAll('.entry-btn').forEach(x=>x.classList.remove('active'));button.classList.add('active');
   $('entryTitle').textContent=entry.sourceLabel||entry.entryId;
   $('entryMeta').textContent=`${entry.date||'date inconnue'} · ${doc.label||doc.documentId} · ${doc.sourceUnitId||''}`;
-  $('entryText').textContent=entry.text;
-  $('captureSelection').disabled=false; $('saveAnnotation').disabled=true; $('selectionPreview').textContent='Aucun passage sélectionné.';
+  $('entryText').textContent=entry.text;$('captureSelection').disabled=false;$('saveAnnotation').disabled=true;$('selectionPreview').textContent='Aucun passage sélectionné.';
 }
 
 $('captureSelection').onclick=()=>{
-  if(!currentEntry)return;
-  const sel=window.getSelection();
-  if(!sel || sel.rangeCount===0 || sel.isCollapsed){alert('Sélectionnez d’abord un passage dans le texte.');return;}
-  const range=sel.getRangeAt(0), container=$('entryText');
+  if(!currentEntry)return;const sel=window.getSelection();
+  if(!sel||sel.rangeCount===0||sel.isCollapsed){alert('Sélectionnez d’abord un passage dans le texte.');return;}
+  const range=sel.getRangeAt(0),container=$('entryText');
   if(!container.contains(range.commonAncestorContainer)){alert('La sélection doit se trouver dans le texte du journal.');return;}
-  const pre=document.createRange(); pre.selectNodeContents(container); pre.setEnd(range.startContainer,range.startOffset);
-  const start=pre.toString().length; const text=range.toString(); const end=start+text.length;
+  const pre=document.createRange();pre.selectNodeContents(container);pre.setEnd(range.startContainer,range.startOffset);
+  const start=pre.toString().length,text=range.toString(),end=start+text.length;
   if(!text.trim()){alert('Sélection vide.');return;}
-  selectionState={start,end};
-  $('selectionPreview').textContent=text;
-  $('saveAnnotation').disabled=false;
+  selectionState={start,end};$('selectionPreview').textContent=text;$('saveAnnotation').disabled=false;
   log(`Sélection capturée : ${start}–${end}. Le texte n'est pas stocké dans l'annotation.`);
 };
 
 $('chooseWorkspace').onclick=async()=>{
-  try{
-    workspaceHandle=await window.showDirectoryPicker({mode:'readwrite'});
-    updateStatus(); log(`Workspace sélectionné : ${workspaceHandle.name}`);
-    await loadExistingAnnotations();
-  }catch(err){if(err.name!=='AbortError')log(`ERREUR workspace : ${err.message}`);}
+  if(typeof window.showDirectoryPicker!=='function'){
+    const msg=location.protocol==='file:'
+      ? 'showDirectoryPicker() est indisponible en file:// sur ce navigateur. Ouvrez ce même fichier via http://127.0.0.1 (Live Server convient pour le développement).'
+      : 'showDirectoryPicker() est indisponible dans ce navigateur ou bloqué par une politique système.';
+    log(`ERREUR workspace : ${msg}`);alert(msg);return;
+  }
+  try{workspaceHandle=await window.showDirectoryPicker({mode:'readwrite'});updateStatus();log(`Workspace sélectionné : ${workspaceHandle.name}`);await loadExistingAnnotations();}
+  catch(err){if(err.name!=='AbortError')log(`ERREUR workspace : ${err.name} — ${err.message}`);}
 };
 
 async function loadExistingAnnotations(){
   annotations=[];
-  try{
-    const fh=await workspaceHandle.getFileHandle('annotations.jsonl'); const f=await fh.getFile();
-    const lines=(await f.text()).split(/\r?\n/).filter(Boolean);
-    for(const line of lines){try{annotations.push(JSON.parse(line));}catch{}}
-    log(`${annotations.length} annotation(s) existante(s) relue(s).`);
-  }catch(err){if(err.name==='NotFoundError')log('Aucun annotations.jsonl existant : il sera créé au premier enregistrement.'); else throw err;}
+  try{const fh=await workspaceHandle.getFileHandle('annotations.jsonl');const f=await fh.getFile();const lines=(await f.text()).split(/\r?\n/).filter(Boolean);for(const line of lines){try{annotations.push(JSON.parse(line));}catch{}}log(`${annotations.length} annotation(s) existante(s) relue(s).`);}
+  catch(err){if(err.name==='NotFoundError')log('Aucun annotations.jsonl existant : il sera créé au premier enregistrement.');else throw err;}
   updateCount();
 }
 function updateCount(){const n=annotations.length;$('annotationCount').textContent=`${n} annotation${n>1?'s':''} enregistrée${n>1?'s':''}.`;}
@@ -137,31 +143,21 @@ $('saveAnnotation').onclick=async()=>{
   if(!workspaceHandle){alert('Choisissez d’abord le dossier de travail.');return;}
   if(!currentEntry||!selectionState){alert('Aucune sélection active.');return;}
   const now=new Date().toISOString();
-  const ann={
-    schemaVersion:'0.1.0', annotationId:uuid(), corpusId:corpus.corpusId, annotatorId:null,
-    target:{scope:'segment',documentId:currentDoc.documentId,sourceUnitId:currentDoc.sourceUnitId||null,entryId:currentEntry.entryId,start:selectionState.start,end:selectionState.end,sourceHash:null},
-    createdAt:now,updatedAt:now,
-    analysis:{spatialContext:[$('spatial').value],socialSphere:[$('social').value],valence:$('valence').value,intimacy:$('intimacy').value,affects:csv($('affects').value),confidence:null},
-    tags:csv($('tags').value),entityIds:[],comment:$('comment').value.trim()
-  };
+  const ann={schemaVersion:'0.1.0',annotationId:uuid(),corpusId:corpus.corpusId,annotatorId:null,target:{scope:'segment',documentId:currentDoc.documentId,sourceUnitId:currentDoc.sourceUnitId||null,entryId:currentEntry.entryId,start:selectionState.start,end:selectionState.end,sourceHash:null},createdAt:now,updatedAt:now,analysis:{spatialContext:[$('spatial').value],socialSphere:[$('social').value],valence:$('valence').value,intimacy:$('intimacy').value,affects:csv($('affects').value),confidence:null},tags:csv($('tags').value),entityIds:[],comment:$('comment').value.trim()};
   annotations.push(ann);
   try{await writeJsonl();updateCount();log(`Annotation ${ann.annotationId} enregistrée sans texte-source.`);resetForm();}
   catch(err){annotations.pop();log(`ERREUR écriture : ${err.message}`);alert('Échec de l’écriture locale.');}
 };
-async function writeJsonl(){
-  const fh=await workspaceHandle.getFileHandle('annotations.jsonl',{create:true}); const w=await fh.createWritable();
-  await w.write(annotations.map(a=>JSON.stringify(a)).join('\n')+'\n'); await w.close();
-}
+async function writeJsonl(){const fh=await workspaceHandle.getFileHandle('annotations.jsonl',{create:true});const w=await fh.createWritable();await w.write(annotations.map(a=>JSON.stringify(a)).join('\n')+'\n');await w.close();}
 function resetForm(){selectionState=null;$('selectionPreview').textContent='Aucun passage sélectionné.';$('saveAnnotation').disabled=true;$('affects').value='';$('tags').value='';$('comment').value='';}
 
 $('exportBtn').onclick=async()=>{
   if(!workspaceHandle){alert('Choisissez d’abord le workspace.');return;}
   const exportObj={exportVersion:'0.1.0',corpusId:corpus?.corpusId||null,exportedAt:new Date().toISOString(),annotations};
-  const fh=await workspaceHandle.getFileHandle('remise-journallab.json',{create:true}); const w=await fh.createWritable();
-  await w.write(JSON.stringify(exportObj,null,2)); await w.close();
+  const fh=await workspaceHandle.getFileHandle('remise-journallab.json',{create:true});const w=await fh.createWritable();await w.write(JSON.stringify(exportObj,null,2));await w.close();
   log('remise-journallab.json généré. Aucun texte du corpus n’y est inclus.');
 };
-updateStatus();
+updateStatus();detectFilesystemApi();
 </script>
 </body>
 </html>
