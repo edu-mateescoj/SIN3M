@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/journal-lab/annotation.schema.json",
+  "title": "JournalLab Annotation",
+  "description": "Schéma initial d'une annotation stand-off. Aucun texte du corpus n'est stocké dans l'annotation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "annotationId",
+    "corpusId",
+    "target",
+    "createdAt",
+    "updatedAt",
+    "analysis"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "annotationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "corpusId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "annotatorId": {
+      "type": ["string", "null"]
+    },
+    "target": {
+      "oneOf": [
+        { "$ref": "#/$defs/entryTarget" },
+        { "$ref": "#/$defs/segmentTarget" },
+        { "$ref": "#/$defs/multiSegmentTarget" }
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "analysis": {
+      "$ref": "#/$defs/analysis"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "entityIds": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "comment": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "$defs": {
+    "sourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documentId", "entryId"],
+      "properties": {
+        "documentId": { "type": "string", "minLength": 1 },
+        "sourceUnitId": { "type": ["string", "null"] },
+        "entryId": { "type": "string", "minLength": 1 },
+        "sourceHash": { "type": ["string", "null"] }
+      }
+    },
+    "entryTarget": {
+      "allOf": [
+        { "$ref": "#/$defs/sourceRef" },
+        {
+          "type": "object",
+          "properties": {
+            "scope": { "const": "entry" }
+          },
+          "required": ["scope"]
+        }
+      ]
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "segmentTarget": {
+      "allOf": [
+        { "$ref": "#/$defs/sourceRef" },
+        {
+          "type": "object",
+          "properties": {
+            "scope": { "const": "segment" },
+            "start": { "type": "integer", "minimum": 0 },
+            "end": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["scope", "start", "end"]
+        }
+      ]
+    },
+    "multiSegmentTarget": {
+      "allOf": [
+        { "$ref": "#/$defs/sourceRef" },
+        {
+          "type": "object",
+          "properties": {
+            "scope": { "const": "multi-segment" },
+            "segments": {
+              "type": "array",
+              "minItems": 2,
+              "items": { "$ref": "#/$defs/segment" }
+            }
+          },
+          "required": ["scope", "segments"]
+        }
+      ]
+    },
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "spatialContext": {
+          "type": "array",
+          "items": {
+            "enum": ["home", "school", "work", "public", "travel", "other", "unknown"]
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "socialSphere": {
+          "type": "array",
+          "items": {
+            "enum": ["family", "friends", "school", "work", "romantic", "public", "solitary", "other", "unknown"]
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "valence": {
+          "enum": ["positive", "negative", "neutral", "mixed", "uncertain", null]
+        },
+        "intimacy": {
+          "enum": ["intimate", "extimate", "mixed", "uncertain", null]
+        },
+        "affects": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "default": []
+        },
+        "confidence": {
+          "enum": ["high", "medium", "low", "unknown", null]
+        }
+      }
+    }
+  }
+}
