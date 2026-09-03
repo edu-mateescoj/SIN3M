@@ -1,5 +1,17 @@
 # 04 — Roadmap
 
+## État au 3 septembre 2026
+
+- **MVP0 validé sur un poste enseignant** avec Microsoft Edge lancé en `file://`.
+- `showDirectoryPicker()` disponible.
+- sélection de dossier fonctionnelle ;
+- création/écrasement d'un fichier local fonctionnelle ;
+- relecture du fichier fonctionnelle ;
+- essais concluants dans un dossier situé sur `C:` et dans un dossier situé sur `J:`.
+- **Reste à confirmer avec une identité élève** que les politiques et ACL du poste ne restreignent pas ces opérations.
+
+Décision provisoire : poursuivre l'architecture **HTML/CSS/JS sans serveur local ni installation**.
+
 ## Phase A — préparation scientifique et pédagogique
 
 ### A1. Inspecter la structure réelle du corpus
@@ -47,7 +59,7 @@ Définir une whitelist stricte des champs autorisés dans une remise.
 
 ## Phase C — MVP technique
 
-### C0. Test poste scolaire
+### C0. Test poste scolaire — **validé enseignant / à confirmer élève**
 Un HTML minimal teste :
 1. disponibilité de `showDirectoryPicker` ;
 2. sélection d'un dossier ;
@@ -56,24 +68,24 @@ Un HTML minimal teste :
 5. persistance de la permission selon Edge ;
 6. comportement sans Internet.
 
-Décision :
-- **C0-A** accès direct au filesystem si autorisé ;
-- **C0-B** import/export par téléchargement si la politique Edge bloque l'écriture.
+Choix actuel :
+- **C0-A** accès direct au filesystem retenu provisoirement ;
+- **C0-B** import/export par téléchargement conservé comme fallback si une politique élève bloque l'écriture.
 
-### C1. Lecteur
-- chargement du manifeste ;
+### C1. Lecteur — **en cours**
+- chargement d'un corpus JSON local fictif ;
 - liste des journaux/cahiers/entrées ;
 - affichage texte ;
 - navigation chronologique ;
-- recherche locale.
+- recherche locale (itération suivante).
 
-### C2. Sélection et annotation
+### C2. Sélection et annotation — **en cours**
 - sélection DOM ;
 - conversion robuste en offsets dans le texte normalisé ;
-- aperçu du passage ;
+- aperçu du passage uniquement à l'écran ;
 - formulaire configurable ;
-- sauvegarde stand-off ;
-- restauration du surlignage.
+- sauvegarde stand-off sans recopier le passage ;
+- restauration du surlignage (itération suivante).
 
 ### C3. Hypertexte
 - tags ;
