@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>JournalLab — Test local MVP0</title>
+  <style>
+    :root { font-family: Arial, sans-serif; color-scheme: light; }
+    body { max-width: 820px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { margin-bottom: .25rem; }
+    .notice { padding: 1rem; border: 1px solid #999; border-radius: .5rem; margin: 1rem 0; }
+    button { font: inherit; padding: .7rem 1rem; margin: .3rem .4rem .3rem 0; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    pre { white-space: pre-wrap; padding: 1rem; border: 1px solid #bbb; border-radius: .5rem; min-height: 8rem; }
+    .ok { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>JournalLab — Test local MVP0</h1>
+  <p>Ce fichier ne contient aucun corpus. Il sert uniquement à tester les capacités du navigateur sur un compte élève.</p>
+
+  <div class="notice">
+    <strong>But du test</strong>
+    <ol>
+      <li>vérifier la présence de la File System Access API ;</li>
+      <li>choisir explicitement un dossier de test ;</li>
+      <li>y créer un fichier <code>journallab-test.txt</code> ;</li>
+      <li>relire ce fichier ;</li>
+      <li>faire le test sans connexion Internet.</li>
+    </ol>
+  </div>
+
+  <button id="check">1. Tester le navigateur</button>
+  <button id="choose">2. Choisir un dossier</button>
+  <button id="write" disabled>3. Écrire le fichier test</button>
+  <button id="read" disabled>4. Relire le fichier test</button>
+
+  <h2>Journal local du test</h2>
+  <pre id="log" aria-live="polite"></pre>
+
+  <script>
+    'use strict';
+
+    let directoryHandle = null;
+    const logBox = document.getElementById('log');
+    const writeButton = document.getElementById('write');
+    const readButton = document.getElementById('read');
+
+    function log(message) {
+      const timestamp = new Date().toLocaleTimeString('fr-CH');
+      logBox.textContent += `[${timestamp}] ${message}\n`;
+    }
+
+    function describeContext() {
+      log(`URL : ${location.href}`);
+      log(`Protocole : ${location.protocol}`);
+      log(`Contexte sécurisé déclaré par le navigateur : ${window.isSecureContext ? 'OUI' : 'NON'}`);
+      log(`showDirectoryPicker disponible : ${'showDirectoryPicker' in window ? 'OUI' : 'NON'}`);
+    }
+
+    async function chooseDirectory() {
+      if (!('showDirectoryPicker' in window)) {
+        log('ÉCHEC : showDirectoryPicker() est indisponible dans ce navigateur/contexte.');
+        return;
+      }
+
+      try {
+        directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        log(`Dossier sélectionné : ${directoryHandle.name}`);
+        writeButton.disabled = false;
+        readButton.disabled = false;
+      } catch (error) {
+        log(`Sélection annulée ou refusée : ${error.name} — ${error.message}`);
+      }
+    }
+
+    async function ensurePermission(handle, mode = 'readwrite') {
+      const options = { mode };
+      if (await handle.queryPermission(options) === 'granted') return true;
+      return (await handle.requestPermission(options)) === 'granted';
+    }
+
+    async function writeTestFile() {
+      if (!directoryHandle) return;
+      try {
+        if (!(await ensurePermission(directoryHandle, 'readwrite'))) {
+          log('ÉCHEC : permission d’écriture refusée.');
+          return;
+        }
+
+        const fileHandle = await directoryHandle.getFileHandle('journallab-test.txt', { create: true });
+        const writable = await fileHandle.createWritable();
+        const content = [
+          'JournalLab MVP0',
+          `Créé localement : ${new Date().toISOString()}`,
+          'Aucun contenu de corpus.',
+          ''
+        ].join('\n');
+        await writable.write(content);
+        await writable.close();
+        log('OK : journallab-test.txt a été créé/écrasé localement.');
+      } catch (error) {
+        log(`ÉCHEC écriture : ${error.name} — ${error.message}`);
+      }
+    }
+
+    async function readTestFile() {
+      if (!directoryHandle) return;
+      try {
+        const fileHandle = await directoryHandle.getFileHandle('journallab-test.txt');
+        const file = await fileHandle.getFile();
+        const text = await file.text();
+        log('OK : fichier relu. Contenu :');
+        log(text.trim());
+      } catch (error) {
+        log(`ÉCHEC lecture : ${error.name} — ${error.message}`);
+      }
+    }
+
+    document.getElementById('check').addEventListener('click', describeContext);
+    document.getElementById('choose').addEventListener('click', chooseDirectory);
+    writeButton.addEventListener('click', writeTestFile);
+    readButton.addEventListener('click', readTestFile);
+
+    log('Prêt. Commencer par « Tester le navigateur ».');
+  </script>
+</body>
+</html>
