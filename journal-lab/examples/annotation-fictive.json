@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "0.1.0",
+  "annotationId": "ANN-DEMO-0001",
+  "corpusId": "CORPUS-FICTIF-V1",
+  "annotatorId": "ELEVE-DEMO",
+  "target": {
+    "scope": "segment",
+    "documentId": "JOURNAL-DEMO",
+    "sourceUnitId": "CAHIER-A",
+    "entryId": "ENTREE-0012",
+    "start": 84,
+    "end": 163,
+    "sourceHash": "sha256:fictif"
+  },
+  "createdAt": "2026-09-03T10:00:00Z",
+  "updatedAt": "2026-09-03T10:00:00Z",
+  "analysis": {
+    "spatialContext": ["home"],
+    "socialSphere": ["family"],
+    "valence": "negative",
+    "intimacy": "intimate",
+    "affects": ["inquietude"],
+    "confidence": "medium"
+  },
+  "tags": ["attente", "famille"],
+  "entityIds": ["P-DEMO-01"],
+  "comment": "Exemple entièrement inventé : le passage source n'est volontairement pas reproduit."
+}
