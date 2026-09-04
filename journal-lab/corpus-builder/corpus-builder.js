@@ -5,6 +5,8 @@ const state = {
   transformations: [],
   validation: [],
   selectedBlockId: null,
+  sourceRevision: 0,
+  segmentationRevision: null,
   dependencies: {
     pdfjs: { available: false, version: null },
     mammoth: { available: false, version: null }
@@ -53,6 +55,29 @@ async function sha256Bytes(buffer) {
 
 async function sha256Text(text) {
   return sha256Bytes(new TextEncoder().encode(text));
+}
+
+function normalizeOutputName(value, fallback) {
+  let name = String(value || '').trim() || fallback;
+  name = name.replace(/[\\/:*?"<>|]+/g, '-');
+  if (!/\.json$/i.test(name)) name += '.json';
+  return name;
+}
+
+function segmentationIsStale() {
+  return !!state.entries.length && state.segmentationRevision !== state.sourceRevision;
+}
+
+function updateSegmentationNotice() {
+  const box = $('segmentationNotice');
+  if (!box) return;
+  if (segmentationIsStale()) {
+    box.className = 'warning';
+    box.textContent = 'La transcription corrigée a changé après la construction des entrées. La segmentation actuelle est obsolète : reconstruisez-la avant export. Vos entrées actuelles restent visibles pour comparaison tant que vous ne reconstruisez pas.';
+  } else {
+    box.className = 'info';
+    box.textContent = 'Sans dates : cliquez sur « Commencer / reconstruire la segmentation manuelle ». Le Builder crée une seule entrée depuis le texte corrigé ; placez ensuite le curseur dans cette entrée et utilisez « Scinder au curseur ».';
+  }
 }
 
 function downloadJson(filename, object) {
@@ -279,13 +304,14 @@ function normalizeBlockText(text) {
 }
 
 function textItemsToLines(items) {
+  const textItems = (items || []).filter(item => item && typeof item.str === 'string');
   const lines = [];
   let current = '';
   let lastY = null;
   let lastEndX = null;
   let lastHeight = 10;
 
-  for (const item of items) {
+  for (const item of textItems) {
     if (!item || typeof item.str !== 'string') continue;
     const x = Array.isArray(item.transform) ? item.transform[4] : null;
     const y = Array.isArray(item.transform) ? item.transform[5] : null;
@@ -323,7 +349,11 @@ function textItemsToLines(items) {
     }
   }
   if (current.trim()) lines.push(current.trimEnd());
-  return normalizeBlockText(lines.join('\n'));
+  let rebuilt = normalizeBlockText(lines.join('\n'));
+  if (!rebuilt && textItems.length) {
+    rebuilt = normalizeBlockText(textItems.map(item => item.str).join(' '));
+  }
+  return rebuilt;
 }
 
 async function extractPdf(source, file) {
@@ -346,7 +376,13 @@ async function extractPdf(source, file) {
       includeMarkedContent: false,
       disableNormalization: false
     });
+    const rawTextItems = (content.items || []).filter(item => item && typeof item.str === 'string');
     const text = textItemsToLines(content.items);
+    if (!text && rawTextItems.length === 0) {
+      source.extractionMessages.push('Page ' + pageNumber + ' : aucune couche texte extractible.');
+    } else if (!text && rawTextItems.length) {
+      source.extractionMessages.push('Page ' + pageNumber + ' : éléments texte détectés mais reconstruction vide.');
+    }
     blocks.push({
       blockId: source.assetId + '-P' + String(pageNumber).padStart(4, '0'),
       sourceId: source.assetId,
@@ -360,6 +396,11 @@ async function extractPdf(source, file) {
     page.cleanup();
   }
   await pdf.destroy();
+  const nonEmpty = blocks.filter(block => block.text.trim()).length;
+  source.extractionMessages.push('PDF : ' + nonEmpty + '/' + blocks.length + ' page(s) avec texte extractible.');
+  if (!nonEmpty) {
+    throw new Error('PDF ouvert, mais aucune couche texte exploitable n’a été extraite. Vérifiez qu’il s’agit bien d’un PDF de transcription avec texte sélectionnable ; sinon utilisez le DOCX ou une extraction/OCR locale séparée.');
+  }
   return blocks;
 }
 
@@ -437,10 +478,14 @@ async function extractAll() {
       });
     } catch (error) {
       source.extractionMessages.push('Extraction échouée : ' + error.message);
+      $('extractionStatus').textContent = 'ERREUR ' + source.fileName + ' : ' + error.message;
     }
   }
 
   state.blocks = newBlocks;
+  state.sourceRevision += 1;
+  state.segmentationRevision = null;
+  state.entries = [];
   state.selectedBlockId = state.blocks[0]?.blockId || null;
   $('extractionStatus').textContent = state.blocks.length + ' bloc(s) extrait(s).';
   renderSources();
@@ -511,6 +556,7 @@ async function saveBlockCorrection() {
   }
   block.text = next;
   block.modified = true;
+  state.sourceRevision += 1;
   state.transformations.push({
     at: nowIso(),
     type: 'manual-block-edit',
@@ -519,7 +565,12 @@ async function saveBlockCorrection() {
     afterHash
   });
   renderBlocks();
-  setStatus('Correction appliquée à la copie de travail.');
+  updateSegmentationNotice();
+  if (segmentationIsStale()) {
+    setStatus('Correction appliquée. La segmentation existante est maintenant à reconstruire avant export.');
+  } else {
+    setStatus('Correction appliquée à la copie de travail.');
+  }
 }
 
 function buildComposite() {
@@ -572,9 +623,11 @@ function makeSingleEntry() {
   const composite = buildComposite();
   const refs = entryRefsForRange(composite.ranges, 0, composite.text.length);
   state.entries = [createEntry(composite.text, 0, refs, 'Entrée complète', null)];
-  state.transformations.push({ at: nowIso(), type: 'segment-single-entry', entries: 1 });
+  state.segmentationRevision = state.sourceRevision;
+  state.transformations.push({ at: nowIso(), type: 'segment-single-entry', entries: 1, sourceRevision: state.sourceRevision });
   renderEntries();
-  setStatus('Une entrée créée.');
+  updateSegmentationNotice();
+  setStatus('Segmentation manuelle initialisée depuis le texte corrigé. Scindez maintenant l’entrée au curseur.');
 }
 
 const frenchMonths = {
@@ -628,15 +681,18 @@ function detectDateEntries() {
   }
 
   state.entries = entries;
+  state.segmentationRevision = state.sourceRevision;
   state.transformations.push({
     at: nowIso(),
     type: 'segment-date-regex',
     regex: $('dateRegex').value,
     caseInsensitive: $('regexCaseInsensitive').checked,
     matches: matches.length,
-    entries: entries.length
+    entries: entries.length,
+    sourceRevision: state.sourceRevision
   });
   renderEntries();
+  updateSegmentationNotice();
   setStatus(entries.length + ' entrée(s) proposée(s).');
 }
 
@@ -855,6 +911,7 @@ function validate() {
   if (!state.blocks.length) push('warn', 'Aucun bloc extrait conservé.');
   if (!state.entries.length) push('error', 'Aucune entrée canonique.');
   else push('ok', state.entries.length + ' entrée(s) canonique(s).');
+  if (segmentationIsStale()) push('error', 'La segmentation est obsolète par rapport aux dernières corrections des blocs. Reconstruisez-la avant export.');
 
   const ids = new Map();
   state.entries.forEach((entry, index) => {
@@ -1002,9 +1059,11 @@ function saveWorkState() {
     entries: state.entries,
     transformations: state.transformations,
     validation: state.validation,
+    sourceRevision: state.sourceRevision,
+    segmentationRevision: state.segmentationRevision,
     note: 'Les fichiers binaires sources ne sont pas inclus. Réimportez-les uniquement si une nouvelle extraction est nécessaire.'
   };
-  downloadJson('corpus-builder-chantier.json', snapshot);
+  downloadJson(normalizeOutputName($('stateOutputName')?.value, 'corpus-builder-chantier.json'), snapshot);
 }
 
 async function loadWorkState(file) {
@@ -1025,12 +1084,15 @@ async function loadWorkState(file) {
   state.entries = Array.isArray(parsed.entries) ? parsed.entries : [];
   state.transformations = Array.isArray(parsed.transformations) ? parsed.transformations : [];
   state.validation = Array.isArray(parsed.validation) ? parsed.validation : [];
+  state.sourceRevision = Number.isInteger(parsed.sourceRevision) ? parsed.sourceRevision : 0;
+  state.segmentationRevision = Number.isInteger(parsed.segmentationRevision) ? parsed.segmentationRevision : (state.entries.length ? state.sourceRevision : null);
   state.selectedBlockId = state.blocks[0]?.blockId || null;
 
   renderSources();
   renderBlocks();
   renderEntries();
   renderValidation();
+  updateSegmentationNotice();
   setStatus('Chantier repris. Les binaires source devront être réimportés pour toute nouvelle extraction.');
 }
 
@@ -1074,14 +1136,16 @@ $('exportCorpus').addEventListener('click', async () => {
     return;
   }
   const corpus = await buildCorpus();
-  downloadJson('corpus.json', corpus);
-  setStatus('corpus.json généré localement.');
+  const filename = normalizeOutputName($('corpusOutputName')?.value, 'corpus.json');
+  downloadJson(filename, corpus);
+  setStatus(filename + ' généré localement.');
 });
 
 $('exportReport').addEventListener('click', () => {
   validate();
-  downloadJson('build-report.json', buildReport());
-  setStatus('build-report.json généré localement.');
+  const filename = normalizeOutputName($('reportOutputName')?.value, 'build-report.json');
+  downloadJson(filename, buildReport());
+  setStatus(filename + ' généré localement.');
 });
 
 window.addEventListener('beforeunload', () => {
@@ -1092,4 +1156,5 @@ renderSources();
 renderBlocks();
 renderEntries();
 renderValidation();
+updateSegmentationNotice();
 checkDependencies().catch(() => {});
