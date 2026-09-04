@@ -7,6 +7,7 @@ const state = {
   selectedBlockId: null,
   sourceRevision: 0,
   segmentationRevision: null,
+  segmentationSourceHash: null,
   dependencies: {
     pdfjs: { available: false, version: null },
     mammoth: { available: false, version: null }
@@ -395,7 +396,12 @@ async function extractPdf(source, file) {
     });
     page.cleanup();
   }
-  await pdf.destroy();
+  try {
+    if (loadingTask && typeof loadingTask.destroy === 'function') await loadingTask.destroy();
+    else if (pdf && typeof pdf.destroy === 'function') await pdf.destroy();
+  } catch (cleanupError) {
+    source.extractionMessages.push('Nettoyage PDF.js non bloquant : ' + cleanupError.message);
+  }
   const nonEmpty = blocks.filter(block => block.text.trim()).length;
   source.extractionMessages.push('PDF : ' + nonEmpty + '/' + blocks.length + ' page(s) avec texte extractible.');
   if (!nonEmpty) {
@@ -529,6 +535,7 @@ async function extractAll() {
   state.blocks = newBlocks;
   state.sourceRevision += 1;
   state.segmentationRevision = null;
+  state.segmentationSourceHash = null;
   state.entries = [];
   state.selectedBlockId = state.blocks[0]?.blockId || null;
   $('extractionStatus').textContent = extractionErrors.length
@@ -580,6 +587,14 @@ function renderBlocks() {
 }
 
 function selectBlock(blockId, rerender = true) {
+  if (state.selectedBlockId && state.selectedBlockId !== blockId) {
+    const changed = syncBlockEditorLive();
+    if (changed) {
+      state.sourceRevision += 1;
+      state.transformations.push({ at: nowIso(), type: 'live-block-edit', blockId: state.selectedBlockId });
+      updateSegmentationNotice();
+    }
+  }
   state.selectedBlockId = blockId;
   const block = state.blocks.find(b => b.blockId === blockId);
   if (!block) return;
@@ -591,13 +606,23 @@ function selectBlock(blockId, rerender = true) {
   if (rerender) renderBlocks();
 }
 
+function syncBlockEditorLive() {
+  const block = state.blocks.find(b => b.blockId === state.selectedBlockId);
+  if (!block || $('blockEditor').disabled) return false;
+  const next = $('blockEditor').value.replace(/\r\n?/g, '\n');
+  if (next === block.text) return false;
+  block.text = next;
+  block.modified = true;
+  return true;
+}
+
 async function saveBlockCorrection() {
   const block = state.blocks.find(b => b.blockId === state.selectedBlockId);
   if (!block) return;
   const beforeHash = await sha256Text(block.text);
   const next = normalizeBlockText($('blockEditor').value);
   const afterHash = await sha256Text(next);
-  if (beforeHash === afterHash) {
+  if (beforeHash === afterHash && next === block.text) {
     setStatus('Aucune modification du bloc.');
     return;
   }
@@ -639,6 +664,10 @@ function buildComposite() {
   return { text, ranges };
 }
 
+async function currentCompositeHash() {
+  return sha256Text(buildComposite().text);
+}
+
 function entryRefsForRange(ranges, start, end) {
   const overlapping = ranges.filter(r => r.start < end && r.end > start);
   return {
@@ -662,7 +691,8 @@ function createEntry(text, index, refs, suggestedLabel = null, suggestedDate = n
   };
 }
 
-function makeSingleEntry() {
+async function makeSingleEntry() {
+  commitLiveEditorIfNeeded();
   if (!state.blocks.length) {
     alert('Extrayez d’abord le texte.');
     return;
@@ -671,7 +701,8 @@ function makeSingleEntry() {
   const refs = entryRefsForRange(composite.ranges, 0, composite.text.length);
   state.entries = [createEntry(composite.text, 0, refs, 'Entrée complète', null)];
   state.segmentationRevision = state.sourceRevision;
-  state.transformations.push({ at: nowIso(), type: 'segment-single-entry', entries: 1, sourceRevision: state.sourceRevision });
+  state.segmentationSourceHash = await currentCompositeHash();
+  state.transformations.push({ at: nowIso(), type: 'segment-single-entry', entries: 1, sourceRevision: state.sourceRevision, sourceHash: state.segmentationSourceHash });
   renderEntries();
   updateSegmentationNotice();
   setStatus('Segmentation manuelle initialisée depuis le texte corrigé. Scindez maintenant l’entrée au curseur.');
@@ -692,7 +723,8 @@ function parseFrenchDate(line) {
   return month ? match[3] + '-' + month + '-' + day : null;
 }
 
-function detectDateEntries() {
+async function detectDateEntries() {
+  commitLiveEditorIfNeeded();
   if (!state.blocks.length) {
     alert('Extrayez d’abord le texte.');
     return;
@@ -729,6 +761,7 @@ function detectDateEntries() {
 
   state.entries = entries;
   state.segmentationRevision = state.sourceRevision;
+  state.segmentationSourceHash = await currentCompositeHash();
   state.transformations.push({
     at: nowIso(),
     type: 'segment-date-regex',
@@ -736,7 +769,8 @@ function detectDateEntries() {
     caseInsensitive: $('regexCaseInsensitive').checked,
     matches: matches.length,
     entries: entries.length,
-    sourceRevision: state.sourceRevision
+    sourceRevision: state.sourceRevision,
+    sourceHash: state.segmentationSourceHash
   });
   renderEntries();
   updateSegmentationNotice();
@@ -959,6 +993,7 @@ function validate() {
   if (!state.entries.length) push('error', 'Aucune entrée canonique.');
   else push('ok', state.entries.length + ' entrée(s) canonique(s).');
   if (segmentationIsStale()) push('error', 'La segmentation est obsolète par rapport aux dernières corrections des blocs. Reconstruisez-la avant export.');
+  if (state.entries.length && !state.segmentationSourceHash) push('error', 'La segmentation ne possède pas d’empreinte de provenance. Reconstruisez-la avec cette version du Builder avant export.');
 
   const ids = new Map();
   state.entries.forEach((entry, index) => {
@@ -1035,7 +1070,18 @@ function entryForExport(entry) {
   };
 }
 
+async function assertSegmentationFresh() {
+  if (!state.entries.length) throw new Error('Aucune entrée canonique.');
+  if (!state.segmentationSourceHash) throw new Error('Empreinte de provenance absente : reconstruisez la segmentation.');
+  const hash = await currentCompositeHash();
+  if (hash !== state.segmentationSourceHash) {
+    throw new Error('Le texte extrait/corrigé a changé depuis la segmentation. Reconstruisez la segmentation avant export.');
+  }
+  return hash;
+}
+
 async function buildCorpus() {
+  await assertSegmentationFresh();
   await computeEntryHashes();
   const meta = projectMetadata();
   return {
@@ -1097,6 +1143,7 @@ function buildReport() {
 }
 
 function saveWorkState() {
+  commitLiveEditorIfNeeded();
   const snapshot = {
     stateVersion: '0.1.0',
     savedAt: nowIso(),
@@ -1113,6 +1160,7 @@ function saveWorkState() {
     },
     sourceRevision: state.sourceRevision,
     segmentationRevision: state.segmentationRevision,
+    segmentationSourceHash: state.segmentationSourceHash,
     note: 'Les fichiers binaires sources ne sont pas inclus. Réimportez-les uniquement si une nouvelle extraction est nécessaire.'
   };
   downloadJson(normalizeOutputName($('stateOutputName')?.value, 'corpus-builder-chantier.json'), snapshot);
@@ -1142,6 +1190,7 @@ async function loadWorkState(file) {
   state.validation = Array.isArray(parsed.validation) ? parsed.validation : [];
   state.sourceRevision = Number.isInteger(parsed.sourceRevision) ? parsed.sourceRevision : 0;
   state.segmentationRevision = Number.isInteger(parsed.segmentationRevision) ? parsed.segmentationRevision : (state.entries.length ? state.sourceRevision : null);
+  state.segmentationSourceHash = typeof parsed.segmentationSourceHash === 'string' ? parsed.segmentationSourceHash : null;
   state.selectedBlockId = state.blocks[0]?.blockId || null;
 
   renderSources();
@@ -1152,7 +1201,16 @@ async function loadWorkState(file) {
   setStatus('Chantier repris. Les binaires source devront être réimportés pour toute nouvelle extraction.');
 }
 
+function commitLiveEditorIfNeeded() {
+  if (!$('blockMeta') || !$('blockMeta').textContent.includes('modification en cours')) return;
+  state.sourceRevision += 1;
+  state.transformations.push({ at: nowIso(), type: 'live-block-edit', blockId: state.selectedBlockId });
+  $('blockMeta').textContent = $('blockMeta').textContent.replace(' · modification en cours', '');
+  updateSegmentationNotice();
+}
+
 function activatePanel(name) {
+  if (name !== 'extract') commitLiveEditorIfNeeded();
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
   document.querySelectorAll('.steps button').forEach(b => b.classList.toggle('active', b.dataset.panel === name));
 }
@@ -1167,6 +1225,16 @@ $('clearSources').addEventListener('click', clearSources);
 $('checkDependencies').addEventListener('click', checkDependencies);
 $('extractAll').addEventListener('click', extractAll);
 $('removeSeparators').addEventListener('click', removeSeparatorLines);
+$('blockEditor').addEventListener('input', () => {
+  const block = state.blocks.find(b => b.blockId === state.selectedBlockId);
+  if (!block) return;
+  const next = $('blockEditor').value.replace(/\r\n?/g, '\n');
+  if (next !== block.text) {
+    block.text = next;
+    block.modified = true;
+    $('blockMeta').textContent = $('blockMeta').textContent.replace(/ · modification non appliquée$/, '') + ' · modification en cours';
+  }
+});
 $('saveBlock').addEventListener('click', saveBlockCorrection);
 $('makeSingleEntry').addEventListener('click', makeSingleEntry);
 $('detectDates').addEventListener('click', detectDateEntries);
@@ -1192,10 +1260,16 @@ $('exportCorpus').addEventListener('click', async () => {
     activatePanel('validate');
     return;
   }
-  const corpus = await buildCorpus();
-  const filename = normalizeOutputName($('corpusOutputName')?.value, 'corpus.json');
-  downloadJson(filename, corpus);
-  setStatus(filename + ' généré localement.');
+  try {
+    const corpus = await buildCorpus();
+    const filename = normalizeOutputName($('corpusOutputName')?.value, 'corpus.json');
+    downloadJson(filename, corpus);
+    setStatus(filename + ' généré localement.');
+  } catch (error) {
+    alert('Export refusé : ' + error.message);
+    setStatus('Export refusé : ' + error.message);
+    activatePanel('segment');
+  }
 });
 
 $('exportReport').addEventListener('click', () => {
