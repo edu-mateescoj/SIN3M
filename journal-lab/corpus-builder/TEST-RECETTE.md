@@ -220,3 +220,40 @@ Résultat attendu :
 - l'extension `.json` est ajoutée si elle manque ;
 - les noms choisis sont utilisés ;
 - ils sont conservés dans la sauvegarde de chantier.
+
+
+## 15. Régression — PDF.js cleanup
+
+Importer un PDF avec couche texte.
+
+Résultat attendu :
+- l'extraction ne peut plus échouer uniquement parce que `pdf.destroy()` n'existe pas ;
+- le nettoyage utilise `loadingTask.destroy()` lorsqu'il est disponible ;
+- une erreur de nettoyage éventuelle est non bloquante ;
+- les blocs déjà extraits restent disponibles.
+
+## 16. Régression — édition manuelle d'un bloc
+
+1. Extraire un DOCX.
+2. Dans l'éditeur de bloc, supprimer manuellement une ligne.
+3. Sans nécessairement cliquer « Appliquer la correction », passer à l'étape Segmentation.
+4. Reconstruire la segmentation manuelle.
+5. Exporter.
+
+Résultat attendu :
+- la suppression manuelle est prise en compte ;
+- la modification est marquée dans l'état du Builder ;
+- l'empreinte de la source corrigée est mémorisée lors de la segmentation ;
+- le corpus exporté contient la version corrigée.
+
+## 17. Régression — export d'une segmentation périmée
+
+1. Construire une segmentation.
+2. Revenir à Extraction.
+3. Modifier manuellement un bloc ou supprimer automatiquement des séparateurs.
+4. Aller directement à Export sans reconstruire la segmentation.
+
+Résultat attendu :
+- l'export est refusé ;
+- le contrôle compare le SHA-256 du texte composite actuel à celui de la source ayant servi à la segmentation ;
+- l'utilisateur est invité à reconstruire la segmentation.
