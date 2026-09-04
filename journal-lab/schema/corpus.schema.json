@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/journal-lab/corpus.schema.json",
+  "title": "JournalLab Corpus",
+  "description": "Corpus canonique construit localement à partir de sources privées. Les assets source restent séparés des remises élèves.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "corpusId", "version", "title", "documents"],
+  "properties": {
+    "schemaVersion": {"type": "string", "const": "0.2.0"},
+    "corpusId": {"type": "string", "minLength": 1},
+    "version": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "createdAt": {"type": ["string", "null"], "format": "date-time"},
+    "assets": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/asset"},
+      "default": []
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/document"}
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "kind", "mediaType", "fileName"],
+      "properties": {
+        "assetId": {"type": "string", "minLength": 1},
+        "kind": {
+          "enum": ["transcription", "facsimile", "image", "other"]
+        },
+        "mediaType": {"type": "string", "minLength": 1},
+        "fileName": {"type": "string", "minLength": 1},
+        "sha256": {"type": ["string", "null"]},
+        "pageCount": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "assetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId"],
+      "properties": {
+        "assetId": {"type": "string", "minLength": 1},
+        "pages": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1},
+          "uniqueItems": true,
+          "default": []
+        },
+        "note": {"type": ["string", "null"]}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entryId", "text"],
+      "properties": {
+        "entryId": {"type": "string", "minLength": 1},
+        "date": {"type": ["string", "null"]},
+        "datePrecision": {
+          "enum": ["exact", "approximate", "range", "unknown", null]
+        },
+        "sourceLabel": {"type": ["string", "null"]},
+        "pageRefs": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1},
+          "uniqueItems": true,
+          "default": []
+        },
+        "assetRefs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/assetRef"},
+          "default": []
+        },
+        "text": {"type": "string"},
+        "textHash": {"type": ["string", "null"]}
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documentId", "entries"],
+      "properties": {
+        "documentId": {"type": "string", "minLength": 1},
+        "label": {"type": ["string", "null"]},
+        "sourceUnitId": {"type": ["string", "null"]},
+        "entries": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/entry"}
+        }
+      }
+    }
+  }
+}
