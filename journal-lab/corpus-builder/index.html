@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; worker-src 'self' blob:; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>JournalLab — Corpus Builder</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -96,9 +96,12 @@
 <section id="panel-segment" class="panel">
   <h2>Segmentation en entrées</h2>
   <div class="toolbar">
-    <button id="makeSingleEntry">Créer une entrée unique</button>
-    <button id="detectDates" class="primary">Proposer les entrées par dates</button>
+    <button id="makeSingleEntry" class="primary">Commencer / reconstruire la segmentation manuelle</button>
+    <button id="detectDates">Détection automatique par dates</button>
     <button id="renumberEntries">Renuméroter les IDs</button>
+  </div>
+  <div id="segmentationNotice" class="info">
+    Sans dates : cliquez sur « Commencer / reconstruire la segmentation manuelle ». Le Builder crée alors une seule entrée à partir du texte corrigé ; placez ensuite le curseur dans cette entrée et utilisez « Scinder au curseur » autant de fois que nécessaire.
   </div>
   <details class="config">
     <summary>Réglages de détection</summary>
@@ -124,14 +127,29 @@
   <h2>Export canonique</h2>
   <div class="export-grid">
     <div>
-      <h3>corpus.json</h3>
+      <h3>Corpus canonique</h3>
+      <label>Nom du fichier
+        <input id="corpusOutputName" value="corpus.json" spellcheck="false">
+      </label>
       <p>Texte canonique, métadonnées, hashes et références d'assets. C'est le fichier consommé par JournalLab.</p>
-      <button id="exportCorpus" class="primary">Télécharger corpus.json</button>
+      <button id="exportCorpus" class="primary">Télécharger le corpus</button>
     </div>
     <div>
-      <h3>build-report.json</h3>
+      <h3>Rapport de construction</h3>
+      <label>Nom du fichier
+        <input id="reportOutputName" value="build-report.json" spellcheck="false">
+      </label>
       <p>Provenance technique de la construction : sources, hashes, transformations et avertissements.</p>
-      <button id="exportReport">Télécharger build-report.json</button>
+      <button id="exportReport">Télécharger le rapport</button>
+    </div>
+  </div>
+  <div class="export-grid" style="margin-top:12px">
+    <div>
+      <h3>Sauvegarde du chantier</h3>
+      <label>Nom du fichier
+        <input id="stateOutputName" value="corpus-builder-chantier.json" spellcheck="false">
+      </label>
+      <p>Permet de reprendre ultérieurement blocs corrigés, segmentation et métadonnées.</p>
     </div>
   </div>
   <div class="warning">
