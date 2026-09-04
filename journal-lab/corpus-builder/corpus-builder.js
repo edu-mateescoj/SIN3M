@@ -450,6 +450,7 @@ async function extractAll() {
   }
 
   const newBlocks = [];
+  const extractionErrors = [];
   $('extractionStatus').textContent = 'Extraction en cours…';
 
   for (const source of transcriptionSources) {
@@ -477,8 +478,10 @@ async function extractAll() {
         blocks: blocks.length
       });
     } catch (error) {
+      const message = 'ERREUR ' + source.fileName + ' : ' + error.message;
       source.extractionMessages.push('Extraction échouée : ' + error.message);
-      $('extractionStatus').textContent = 'ERREUR ' + source.fileName + ' : ' + error.message;
+      extractionErrors.push(message);
+      $('extractionStatus').textContent = message;
     }
   }
 
@@ -487,10 +490,13 @@ async function extractAll() {
   state.segmentationRevision = null;
   state.entries = [];
   state.selectedBlockId = state.blocks[0]?.blockId || null;
-  $('extractionStatus').textContent = state.blocks.length + ' bloc(s) extrait(s).';
+  $('extractionStatus').textContent = extractionErrors.length
+    ? state.blocks.length + ' bloc(s) extrait(s). ' + extractionErrors.join(' | ')
+    : state.blocks.length + ' bloc(s) extrait(s).';
   renderSources();
   renderBlocks();
-  setStatus('Extraction terminée.');
+  updateSegmentationNotice();
+  setStatus(extractionErrors.length ? 'Extraction terminée avec erreur(s).' : 'Extraction terminée.');
 }
 
 function renderBlocks() {
@@ -1059,6 +1065,11 @@ function saveWorkState() {
     entries: state.entries,
     transformations: state.transformations,
     validation: state.validation,
+    outputNames: {
+      corpus: normalizeOutputName($('corpusOutputName')?.value, 'corpus.json'),
+      report: normalizeOutputName($('reportOutputName')?.value, 'build-report.json'),
+      state: normalizeOutputName($('stateOutputName')?.value, 'corpus-builder-chantier.json')
+    },
     sourceRevision: state.sourceRevision,
     segmentationRevision: state.segmentationRevision,
     note: 'Les fichiers binaires sources ne sont pas inclus. Réimportez-les uniquement si une nouvelle extraction est nécessaire.'
@@ -1077,6 +1088,10 @@ async function loadWorkState(file) {
   $('documentId').value = p.documentId || '';
   $('sourceUnitId').value = p.sourceUnitId || '';
   $('documentLabel').value = p.documentLabel || '';
+  const outputNames = parsed.outputNames || {};
+  if ($('corpusOutputName')) $('corpusOutputName').value = outputNames.corpus || 'corpus.json';
+  if ($('reportOutputName')) $('reportOutputName').value = outputNames.report || 'build-report.json';
+  if ($('stateOutputName')) $('stateOutputName').value = outputNames.state || 'corpus-builder-chantier.json';
 
   clearSources();
   state.sources = Array.isArray(parsed.sources) ? parsed.sources : [];
