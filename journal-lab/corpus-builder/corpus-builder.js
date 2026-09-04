@@ -442,6 +442,47 @@ async function extractPlainText(source, file) {
   })));
 }
 
+async function removeSeparatorLines() {
+  if (!state.blocks.length) {
+    alert('Extrayez d’abord le texte.');
+    return;
+  }
+  const pattern = /^[\s_\-=—–·•]{5,}$/;
+  let removed = 0;
+  const touched = [];
+
+  for (const block of state.blocks) {
+    const before = block.text;
+    const kept = before.split('\n').filter(line => {
+      const isSeparator = pattern.test(line.trim());
+      if (isSeparator) removed += 1;
+      return !isSeparator;
+    });
+    const after = normalizeBlockText(kept.join('\n'));
+    if (after !== before) {
+      block.text = after;
+      block.modified = true;
+      touched.push(block.blockId);
+    }
+  }
+
+  if (!removed) {
+    setStatus('Aucune ligne séparatrice détectée.');
+    return;
+  }
+
+  state.sourceRevision += 1;
+  state.transformations.push({
+    at: nowIso(),
+    type: 'remove-separator-lines',
+    removedLines: removed,
+    blocks: touched
+  });
+  renderBlocks();
+  updateSegmentationNotice();
+  setStatus(removed + ' ligne(s) séparatrice(s) supprimée(s). ' + (segmentationIsStale() ? 'Segmentation à reconstruire.' : ''));
+}
+
 async function extractAll() {
   const transcriptionSources = state.sources.filter(s => s.kind === 'transcription');
   if (!transcriptionSources.length) {
@@ -1125,6 +1166,7 @@ $('imageFiles').addEventListener('change', event => addFiles(event.target.files,
 $('clearSources').addEventListener('click', clearSources);
 $('checkDependencies').addEventListener('click', checkDependencies);
 $('extractAll').addEventListener('click', extractAll);
+$('removeSeparators').addEventListener('click', removeSeparatorLines);
 $('saveBlock').addEventListener('click', saveBlockCorrection);
 $('makeSingleEntry').addEventListener('click', makeSingleEntry);
 $('detectDates').addEventListener('click', detectDateEntries);
