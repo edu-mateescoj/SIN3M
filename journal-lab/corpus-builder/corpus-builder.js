@@ -588,12 +588,7 @@ function renderBlocks() {
 
 function selectBlock(blockId, rerender = true) {
   if (state.selectedBlockId && state.selectedBlockId !== blockId) {
-    const changed = syncBlockEditorLive();
-    if (changed) {
-      state.sourceRevision += 1;
-      state.transformations.push({ at: nowIso(), type: 'live-block-edit', blockId: state.selectedBlockId });
-      updateSegmentationNotice();
-    }
+    commitLiveEditorIfNeeded();
   }
   state.selectedBlockId = blockId;
   const block = state.blocks.find(b => b.blockId === blockId);
@@ -606,38 +601,34 @@ function selectBlock(blockId, rerender = true) {
   if (rerender) renderBlocks();
 }
 
-function syncBlockEditorLive() {
-  const block = state.blocks.find(b => b.blockId === state.selectedBlockId);
-  if (!block || $('blockEditor').disabled) return false;
-  const next = $('blockEditor').value.replace(/\r\n?/g, '\n');
-  if (next === block.text) return false;
-  block.text = next;
-  block.modified = true;
-  return true;
-}
-
 async function saveBlockCorrection() {
   const block = state.blocks.find(b => b.blockId === state.selectedBlockId);
   if (!block) return;
-  const beforeHash = await sha256Text(block.text);
+
+  const pending = $('blockMeta').textContent.includes('modification en cours');
   const next = normalizeBlockText($('blockEditor').value);
-  const afterHash = await sha256Text(next);
-  if (beforeHash === afterHash && next === block.text) {
+
+  if (!pending && next === block.text) {
     setStatus('Aucune modification du bloc.');
     return;
   }
+
   block.text = next;
   block.modified = true;
+  $('blockEditor').value = next;
+
   state.sourceRevision += 1;
   state.transformations.push({
     at: nowIso(),
     type: 'manual-block-edit',
     blockId: block.blockId,
-    beforeHash,
-    afterHash
+    afterHash: await sha256Text(next)
   });
+
+  $('blockMeta').textContent = $('blockMeta').textContent.replace(' · modification en cours', '');
   renderBlocks();
   updateSegmentationNotice();
+
   if (segmentationIsStale()) {
     setStatus('Correction appliquée. La segmentation existante est maintenant à reconstruire avant export.');
   } else {
@@ -1203,6 +1194,14 @@ async function loadWorkState(file) {
 
 function commitLiveEditorIfNeeded() {
   if (!$('blockMeta') || !$('blockMeta').textContent.includes('modification en cours')) return;
+  const block = state.blocks.find(b => b.blockId === state.selectedBlockId);
+  if (!block) return;
+
+  const next = normalizeBlockText($('blockEditor').value);
+  block.text = next;
+  block.modified = true;
+  $('blockEditor').value = next;
+
   state.sourceRevision += 1;
   state.transformations.push({ at: nowIso(), type: 'live-block-edit', blockId: state.selectedBlockId });
   $('blockMeta').textContent = $('blockMeta').textContent.replace(' · modification en cours', '');
