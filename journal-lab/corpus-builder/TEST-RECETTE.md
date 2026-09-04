@@ -165,3 +165,58 @@ Après installation des dépendances :
 4. vérifier DevTools > Network.
 
 Aucune requête vers Internet ne doit apparaître.
+
+
+## 11. Régression — correction après segmentation
+
+1. Extraire un DOCX/TXT.
+2. Construire une segmentation.
+3. Revenir à Extraction et modifier un bloc.
+4. Cliquer « Appliquer la correction ».
+
+Résultat attendu :
+- la correction reste dans le bloc ;
+- la segmentation existante est marquée obsolète ;
+- Validation signale une erreur bloquante ;
+- l'export du corpus est refusé tant que la segmentation n'a pas été reconstruite ;
+- « Commencer / reconstruire la segmentation manuelle » ou la détection par dates repart du texte corrigé.
+
+## 12. Régression — lignes séparatrices
+
+Avec des lignes telles que :
+
+```text
+____________________________
+----------------------------
+============================
+```
+
+cliquer « Supprimer les lignes séparatrices ».
+
+Résultat attendu :
+- seules les lignes entièrement constituées de séparateurs sont supprimées ;
+- les phrases contenant des tirets/underscores ne sont pas touchées ;
+- la source originale reste inchangée ;
+- une segmentation antérieure est marquée obsolète.
+
+## 13. Régression — PDF sans couche texte
+
+Importer un PDF rasterisé sans texte sélectionnable.
+
+Résultat attendu :
+- le PDF est ouvert et son nombre de pages peut être connu ;
+- le diagnostic indique qu'aucune couche texte exploitable n'a été extraite ;
+- l'application ne présente pas silencieusement « 0 bloc » comme un succès ;
+- le Builder recommande DOCX ou une future étape OCR locale.
+
+## 14. Noms d'exports
+
+Dans l'étape Export, modifier :
+- le nom du corpus ;
+- le nom du rapport ;
+- le nom de sauvegarde de chantier.
+
+Résultat attendu :
+- l'extension `.json` est ajoutée si elle manque ;
+- les noms choisis sont utilisés ;
+- ils sont conservés dans la sauvegarde de chantier.
