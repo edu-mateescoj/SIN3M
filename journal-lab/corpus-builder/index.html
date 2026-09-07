@@ -38,11 +38,12 @@
     <label class="wide">Titre
       <input id="corpusTitle" value="Journal — corpus local">
     </label>
-    <label>Identifiant du document
+    <label>Identifiant du document (cahier)
       <input id="documentId" value="JOURNAL-01" spellcheck="false">
+      <span class="field-hint">Si le nom du fichier contient « cahier 12 », le Builder proposera automatiquement CAHIER-12. Vous pouvez le modifier.</span>
     </label>
-    <label>Cahier / volume
-      <input id="sourceUnitId" placeholder="CAHIER-A">
+    <label>Unité/source complémentaire
+      <input id="sourceUnitId" placeholder="optionnel">
     </label>
     <label class="wide">Libellé du document
       <input id="documentLabel" value="Journal">
@@ -50,6 +51,9 @@
   </div>
   <div class="info">
     Ces métadonnées sont exportées. Aucun nom d'élève ni information d'annotation n'est nécessaire ici.
+  </div>
+  <div class="warning">
+    <strong>Lancement :</strong> Corpus Builder doit être servi en HTTP local (par exemple <code>python -m http.server 8000</code>) puis ouvert via <code>http://127.0.0.1:8000/</code>. L'ouverture directe en <code>file://</code> n'est pas supportée.
   </div>
 </section>
 
@@ -107,7 +111,7 @@
   <details class="config">
     <summary>Réglages de détection</summary>
     <label>Expression régulière — début de ligne
-      <input id="dateRegex" spellcheck="false" value="^(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?\d{1,2}\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\s+\d{4})?\b">
+      <input id="dateRegex" spellcheck="false" value="^(?:\d{8}(?:\s*(?:à|au|a|–|—|-)\s*\d{8})?|(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?\d{1,2}\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\s+\d{4})?)\b">
     </label>
     <label><input id="regexCaseInsensitive" type="checkbox" checked> Ignorer la casse</label>
   </details>
@@ -144,7 +148,7 @@
       <button id="exportReport">Télécharger le rapport</button>
     </div>
   </div>
-  <div class="export-grid" style="margin-top:12px">
+  <div class="export-grid export-grid-spaced">
     <div>
       <h3>Sauvegarde du chantier</h3>
       <label>Nom du fichier
