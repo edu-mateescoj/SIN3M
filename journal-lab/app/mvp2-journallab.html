@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; connect-src http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob:; media-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
-  <title>JournalLab — MVP2</title>
+  <title>JournalLab — MVP2.1</title>
   <style>
     :root{font-family:Arial,Helvetica,sans-serif;color:#1f2937;background:#f5f6f8}
     *{box-sizing:border-box}
@@ -19,6 +19,8 @@
     button:disabled{opacity:.45;cursor:not-allowed}
     .file-label input{display:none}
     .status{font-size:.88rem;margin-left:auto}
+    .identity-badge{font-size:.78rem;padding:4px 7px;border:1px solid #b9c2ca;border-radius:999px;background:#f7f8fa;color:#4f5c68}
+    .identity-badge.known{border-color:#9fc2a6;background:#eff8f1;color:#365d3d}
     .notice{margin-top:9px;padding:8px 10px;border:1px solid #aeb6bf;background:#f7f8fa;border-radius:7px;font-size:.86rem}
     .notice.warning{border-color:#d7b56d;background:#fff7df}
     .hidden{display:none!important}
@@ -64,19 +66,57 @@
 
     .log{margin-top:10px;padding:9px;background:#111827;color:#e5e7eb;border-radius:7px;min-height:65px;max-height:130px;overflow:auto;font:11px/1.42 Consolas,monospace;white-space:pre-wrap}
 
+    /* Zones conceptuelles : la couleur complète les titres, elle ne porte jamais seule le sens. */
+    .zone-corpus{border-top:5px solid #6e91b8;background:#f7faff}
+    .zone-reading{border-top:5px solid #c59a3a;background:#fffdf7}
+    .zone-annotation{border:1px solid #a8c7ae;border-left:5px solid #6f9d78;background:#f7fbf7;border-radius:8px;padding:10px;margin-bottom:12px}
+    .zone-library{border:1px solid #b8bfd0;border-left:5px solid #7b84a3;background:#f8f8fc;border-radius:8px;padding:10px}
+    .draft-mark{border-radius:3px;padding:1px 0;background:#ffe2a3;box-shadow:inset 0 -3px 0 #d18b22}
+    .draft-mark.focused{outline:2px solid #a86400;outline-offset:2px}
+    .workflow{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:7px 0 10px}
+    .workflow-step{border:1px solid #c7cdd3;border-radius:7px;padding:6px 7px;background:#fff;font-size:.76rem;line-height:1.25}
+    .workflow-step strong{display:block;font-size:.78rem}
+    .workflow-step.active{border-color:#8e722f;background:#fff7dc}
+    .workflow-step.done{border-color:#7da086;background:#eff8f1}
+    .workflow-step.locked{opacity:.58}
+    .selection.locked{background:#fff0c7;border-left-color:#c47d13}
+    .selection .selection-label{display:block;font:700 .72rem Arial,sans-serif;color:#77500e;margin-bottom:4px}
+    .success-note{margin:7px 0;padding:7px 9px;border:1px solid #a8c7ae;background:#eff8f1;border-radius:6px;font-size:.82rem}
+    .annotation-form-disabled{opacity:.55}
+    .annotation-form-disabled input,.annotation-form-disabled select,.annotation-form-disabled textarea{cursor:not-allowed}
+    .has-tip{position:relative}
+    .has-tip:hover::after,.has-tip:focus-visible::after{
+      content:attr(data-tooltip);position:absolute;z-index:30;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);
+      width:max-content;max-width:320px;padding:7px 9px;border-radius:6px;background:#1f2937;color:#fff;font-size:.76rem;line-height:1.35;
+      white-space:normal;box-shadow:0 3px 12px rgba(0,0,0,.18);pointer-events:none
+    }
+    .has-tip:hover::before,.has-tip:focus-visible::before{
+      content:"";position:absolute;z-index:31;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);
+      border:5px solid transparent;border-top-color:#1f2937;pointer-events:none
+    }
+    .has-tip.tip-down:hover::after,.has-tip.tip-down:focus-visible::after{bottom:auto;top:calc(100% + 8px)}
+    .has-tip.tip-down:hover::before,.has-tip.tip-down:focus-visible::before{
+      bottom:auto;top:calc(100% + 3px);border-top-color:transparent;border-bottom-color:#1f2937
+    }
+    .action-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+    .action-help{font-size:.78rem;color:#596573}
+    .blocked-note{font-size:.79rem;color:#7b5a12;margin-top:6px}
+
     @media(max-width:1050px){main{grid-template-columns:220px 1fr}.right{grid-column:1/-1}.annotation-list{max-height:220px}}
     @media(max-width:720px){main{display:block}section,aside{margin-bottom:10px}.status{width:100%;margin-left:0}.entries{max-height:260px}.grid2,.filters{grid-template-columns:1fr}.filters .wide{grid-column:auto}}
   </style>
 </head>
 <body>
 <header>
-  <h1>JournalLab — MVP2 local</h1>
+  <h1>JournalLab — MVP2.1 · annotation guidée</h1>
   <div class="toolbar">
     <label class="file-label">1. Charger le corpus<input id="corpusFile" type="file" accept="application/json,.json"></label>
-    <button id="chooseWorkspace">2. Choisir le dossier de travail</button>
+    <button id="chooseWorkspace" class="has-tip tip-down" title="Choisir le dossier local de travail" data-tooltip="Autorise JournalLab à lire et écrire uniquement dans le dossier que vous choisissez.">2. Choisir le dossier de travail</button>
     <label id="portableLoadLabel" class="file-label hidden">2. Charger un travail<input id="workspaceFile" type="file" accept="application/json,.json,.jsonl"></label>
-    <button id="portableSaveBtn" class="hidden">Sauvegarder mon travail</button>
-    <button id="exportBtn">Exporter la remise</button>
+    <button id="portableSaveBtn" class="hidden has-tip tip-down" title="Sauvegarder les annotations enregistrées" data-tooltip="Télécharge une copie locale de toutes les annotations déjà enregistrées.">Sauvegarder mon travail</button>
+    <button id="exportBtn" class="has-tip tip-down" title="Exporter la remise" data-tooltip="Crée la remise à partir des annotations déjà enregistrées. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
+    <span id="identityBadge" class="identity-badge hidden" title="Identité détectée automatiquement"></span>
+    <span id="exportLocation" class="hint">Export : emplacement à déterminer</span>
     <span id="status" class="status">Initialisation…</span>
   </div>
   <div id="modeNotice" class="notice"></div>
@@ -84,8 +124,8 @@
 </header>
 
 <main>
-  <section>
-    <h2>Corpus</h2>
+  <section class="zone-corpus">
+    <h2>1 · Choisir une entrée</h2>
     <div class="left-tools">
       <input id="searchCorpus" type="search" placeholder="Rechercher dans le corpus…" disabled>
       <div id="searchInfo" class="hint">Chargez d’abord le corpus.</div>
@@ -93,7 +133,7 @@
     <div id="entries" class="entries"><span class="hint">Aucune entrée chargée.</span></div>
   </section>
 
-  <section>
+  <section class="zone-reading">
     <div class="reader-head">
       <div>
         <h2 id="entryTitle">Lecture</h2>
@@ -102,16 +142,27 @@
       <span id="entryAnnotationCount" class="badge">0</span>
     </div>
     <div id="entryText" class="text">Le texte du journal apparaîtra ici.</div>
-    <p class="hint">Les surlignages sont reconstruits à partir des offsets enregistrés ; le texte du corpus n’est jamais recopié dans les annotations.</p>
-    <button id="captureSelection" class="primary" disabled>Annoter la sélection</button>
+    <p class="hint">Sélectionnez un passage dans le texte. JournalLab mémorise aussitôt la sélection ; vous pouvez ensuite cliquer sans crainte sur le bouton.</p>
+    <div class="action-row">
+      <button id="captureSelection" class="primary has-tip" title="Figer le passage sélectionné" data-tooltip="Fige le passage sélectionné comme cible de la nouvelle annotation. Rien n’est encore enregistré." disabled>Annoter la sélection</button>
+      <span id="pendingSelectionInfo" class="action-help">Aucune sélection en attente.</span>
+    </div>
   </section>
 
   <aside class="right">
-    <h2>Annotation</h2>
-    <div id="editorMode" class="mode-title">Nouvelle annotation</div>
-    <div id="selectionPreview" class="selection">Aucun passage sélectionné.</div>
+    <div class="zone-annotation">
+      <h2>2 · Analyser le passage</h2>
+      <div class="workflow" aria-label="Workflow d’annotation">
+        <div id="wfSelect" class="workflow-step active"><strong>1. Sélection</strong>Choisir puis figer un passage</div>
+        <div id="wfAnalyze" class="workflow-step locked"><strong>2. Analyse</strong>Renseigner les champs</div>
+        <div id="wfSave" class="workflow-step locked"><strong>3. Enregistrer</strong>Valider l’annotation</div>
+      </div>
+      <div id="editorMode" class="mode-title">Nouvelle annotation</div>
+      <div id="selectionPreview" class="selection"><span class="selection-label">PASSAGE CIBLE</span><span id="selectionPreviewText">Aucun passage sélectionné.</span></div>
+      <div id="saveSuccess" class="success-note hidden"></div>
 
-    <div class="grid2">
+      <div id="annotationForm" class="annotation-form-disabled">
+      <div class="grid2">
       <label class="field">Contexte spatial<select id="spatial"><option value="unknown">NSP</option><option value="home">Maison</option><option value="school">École</option><option value="work">Travail</option><option value="public">Espace public</option><option value="travel">Déplacement</option><option value="other">Autre</option></select></label>
       <label class="field">Sphère sociale<select id="social"><option value="unknown">NSP</option><option value="family">Famille</option><option value="friends">Amis</option><option value="school">École</option><option value="work">Travail</option><option value="romantic">Affectif/amoureux</option><option value="public">Public/social</option><option value="solitary">Solitaire</option><option value="other">Autre</option></select></label>
       <label class="field">Tonalité<select id="valence"><option value="uncertain">NSP</option><option value="positive">Positive</option><option value="negative">Négative</option><option value="neutral">Neutre</option><option value="mixed">Mixte</option></select></label>
@@ -120,17 +171,23 @@
 
     <label class="field">Affects <span class="hint">séparés par des virgules</span><input id="affects" list="affectSuggestions" placeholder="inquiétude, joie, honte…"></label>
     <datalist id="affectSuggestions"></datalist>
+    <label class="field">Personnages mentionnés <span class="hint">séparés par des virgules</span><input id="persons" list="personSuggestions" placeholder="mère, père, petit ami…"></label>
+    <datalist id="personSuggestions"></datalist>
     <label class="field">Tags libres <span class="hint">séparés par des virgules</span><input id="tags" list="tagSuggestions" placeholder="famille, conflit, attente…"></label>
     <datalist id="tagSuggestions"></datalist>
     <label class="field">Commentaire de l’élève<textarea id="comment" placeholder="Analyse, justification, remarque…"></textarea></label>
 
-    <div class="form-actions">
-      <button id="saveAnnotation" class="primary" disabled>Enregistrer</button>
-      <button id="cancelEdit" class="hidden">Annuler la modification</button>
-      <button id="deleteAnnotation" class="danger hidden">Supprimer</button>
+      <div class="form-actions">
+        <button id="saveAnnotation" class="primary has-tip" title="Enregistrer cette annotation" data-tooltip="Enregistre cette annotation dans le travail local. Le passage source n’est jamais copié dans le fichier." disabled>Enregistrer l’annotation</button>
+        <button id="cancelEdit" class="hidden has-tip" title="Annuler l’annotation en cours" data-tooltip="Abandonne l’annotation ou la modification en cours sans toucher aux annotations déjà enregistrées.">Annuler</button>
+        <button id="deleteAnnotation" class="danger hidden has-tip" title="Supprimer cette annotation" data-tooltip="Supprime uniquement cette annotation enregistrée ; le corpus reste intact.">Supprimer</button>
+      </div>
+      <div id="formBlockedNote" class="blocked-note">Les champs sont verrouillés tant qu’aucun passage n’a été figé.</div>
+      </div>
     </div>
 
-    <h3>Annotations enregistrées</h3>
+    <div class="zone-library">
+    <h3>3 · Annotations enregistrées</h3>
     <div class="filters">
       <select id="filterValence">
         <option value="">Toutes tonalités</option>
@@ -148,6 +205,7 @@
     </div>
     <div id="annotationCount" class="hint">0 annotation enregistrée.</div>
     <div id="annotationList" class="annotation-list"></div>
+    </div>
 
     <details>
       <summary class="hint" style="cursor:pointer;margin-top:10px">Diagnostic local</summary>
@@ -164,8 +222,13 @@ var currentDoc=null;
 var currentEntry=null;
 var workspaceHandle=null;
 var selectionState=null;
+var pendingSelection=null;
 var editingAnnotationId=null;
 var annotations=[];
+var resolvedAnnotatorId=null;
+var resolvedIdentitySource=null;
+var savingAnnotation=false;
+var formTouched=false;
 var directFsAvailable=false;
 var portableMode=false;
 var dirty=false;
@@ -189,6 +252,110 @@ var safeArray=function(v,maxItems,maxLen){
 };
 var enumValue=function(v,allowed,fallback){return allowed.indexOf(v)>=0?v:fallback;};
 
+function normalizeAnnotatorId(value){
+  if(typeof value!=='string')return null;
+  var v=value.trim();
+  if(!v)return null;
+  return v.slice(0,300);
+}
+
+function setResolvedIdentity(id,source){
+  var normalized=normalizeAnnotatorId(id);
+  if(!normalized)return false;
+  resolvedAnnotatorId=normalized;
+  resolvedIdentitySource=source||'unknown';
+  $('identityBadge').textContent='Utilisateur : '+normalized;
+  $('identityBadge').title='Identité détectée automatiquement · source : '+resolvedIdentitySource;
+  $('identityBadge').classList.remove('hidden');
+  $('identityBadge').classList.add('known');
+  log('Identité détectée ('+resolvedIdentitySource+').');
+  return true;
+}
+
+function resolveIdentityFromUrl(){
+  try{
+    var params=new URLSearchParams(location.search);
+    return setResolvedIdentity(params.get('annotatorId'),'url');
+  }catch(_){return false;}
+}
+
+async function resolveIdentityFromWorkspace(){
+  if(resolvedAnnotatorId)return true;
+  if(!workspaceHandle)return false;
+  var names=['.journallab-identity.json','identity.json'];
+  for(var i=0;i<names.length;i++){
+    try{
+      var fh=await workspaceHandle.getFileHandle(names[i]);
+      var file=await fh.getFile();
+      var parsed=JSON.parse(await file.text());
+      if(setResolvedIdentity(parsed&&parsed.annotatorId,'workspace:'+names[i]))return true;
+    }catch(err){
+      if(err.name!=='NotFoundError')log('Identité locale ignorée ('+names[i]+') : '+err.message);
+    }
+  }
+  return false;
+}
+
+function resolveIdentityFromAnnotations(){
+  if(resolvedAnnotatorId||!annotations.length)return false;
+  var ids=annotations.map(function(a){return normalizeAnnotatorId(a.annotatorId);}).filter(Boolean);
+  var uniqueIds=Array.from(new Set(ids));
+  if(uniqueIds.length===1)return setResolvedIdentity(uniqueIds[0],'travail existant');
+  return false;
+}
+
+function setAnnotationFormEnabled(enabled){
+  var form=$('annotationForm');
+  form.classList.toggle('annotation-form-disabled',!enabled);
+  form.querySelectorAll('input,select,textarea').forEach(function(el){el.disabled=!enabled;});
+  $('formBlockedNote').classList.toggle('hidden',enabled);
+}
+
+function updateWorkflowUI(){
+  var hasTarget=!!selectionState;
+  $('wfSelect').className='workflow-step '+(hasTarget?'done':'active');
+  if(!hasTarget){
+    $('wfAnalyze').className='workflow-step locked';
+    $('wfSave').className='workflow-step locked';
+  }else if(formTouched){
+    $('wfAnalyze').className='workflow-step done';
+    $('wfSave').className='workflow-step active';
+  }else{
+    $('wfAnalyze').className='workflow-step active';
+    $('wfSave').className='workflow-step';
+  }
+  $('selectionPreview').classList.toggle('locked',hasTarget);
+}
+
+function setPendingSelectionInfo(){
+  if(editingAnnotationId){
+    $('pendingSelectionInfo').textContent='Modification d’une annotation enregistrée.';
+    $('captureSelection').disabled=true;
+    return;
+  }
+  if(pendingSelection){
+    $('pendingSelectionInfo').textContent='Sélection prête : '+(pendingSelection.end-pendingSelection.start)+' caractère(s).';
+    $('captureSelection').disabled=false;
+  }else if(selectionState){
+    $('pendingSelectionInfo').textContent='Passage figé. Vous pouvez remplir le formulaire.';
+    $('captureSelection').disabled=false;
+  }else{
+    $('pendingSelectionInfo').textContent=currentEntry?'Sélectionnez un passage dans le texte.':'Aucune entrée sélectionnée.';
+    $('captureSelection').disabled=true;
+  }
+}
+
+function confirmLeaveEditor(){
+  if(!selectionState)return true;
+  return confirm('Une annotation est en cours. Continuer abandonnera la sélection ou les modifications non enregistrées. Continuer ?');
+}
+
+function showSaveSuccess(message){
+  $('saveSuccess').textContent=message;
+  $('saveSuccess').classList.remove('hidden');
+  setTimeout(function(){$('saveSuccess').classList.add('hidden');},2500);
+}
+
 function uuid(){
   return globalThis.crypto&&globalThis.crypto.randomUUID?globalThis.crypto.randomUUID():'ANN-'+Date.now()+'-'+Math.random().toString(16).slice(2);
 }
@@ -200,7 +367,7 @@ function sanitizeAnnotation(a){
   var start=Number.isInteger(t.start)&&t.start>=0?t.start:0;
   var end=Number.isInteger(t.end)&&t.end>start?t.end:start+1;
   return {
-    schemaVersion:'0.1.0',
+    schemaVersion:'0.2.0',
     annotationId:safeString(a.annotationId,200)||uuid(),
     corpusId:safeString(a.corpusId,300)||'UNKNOWN',
     annotatorId:safeString(a.annotatorId,300),
@@ -223,6 +390,7 @@ function sanitizeAnnotation(a){
       affects:safeArray(analysis.affects,100,200),
       confidence:enumValue(analysis.confidence,['high','medium','low','unknown',null],null)
     },
+    personMentions:safeArray(a.personMentions,200,200),
     tags:safeArray(a.tags,200,200),
     entityIds:safeArray(a.entityIds,200,300),
     comment:safeString(a.comment,20000)||''
@@ -238,6 +406,11 @@ function updateStatus(){
   var corpusStatus=corpus?'Corpus chargé':'Corpus non chargé';
   var storageStatus=portableMode?('Mode portable'+(dirty?' · non sauvegardé':'')):(workspaceHandle?'Workspace : '+workspaceHandle.name:'Dossier non choisi');
   $('status').textContent=corpusStatus+' · '+storageStatus;
+  if($('exportLocation')){
+    $('exportLocation').textContent=portableMode
+      ? 'Export : téléchargement navigateur'
+      : (workspaceHandle?'Export : dossier '+workspaceHandle.name:'Export : futur dossier de travail');
+  }
 }
 function detectStorageMode(){
   directFsAvailable=typeof window.showDirectoryPicker==='function';
@@ -287,12 +460,30 @@ function annotationSnippet(ann){
 function annotationCountFor(entryId,documentId){
   return annotations.filter(function(a){return a.target.entryId===entryId&&a.target.documentId===documentId;}).length;
 }
+function entryTemporalLabel(entry){
+  if(!entry)return 'date inconnue';
+  var start=entry.dateStart||entry.date||null;
+  var end=entry.dateEnd||entry.date||null;
+  if(start&&end&&start!==end)return start+' → '+end;
+  return start||end||entry.date||'date inconnue';
+}
 
 $('corpusFile').addEventListener('change',async function(e){
   var file=e.target.files[0];
   if(!file)return;
+  if(selectionState&&!confirmLeaveEditor()){
+    e.target.value='';
+    return;
+  }
   try{
     corpus=JSON.parse(await file.text());
+    currentDoc=null;
+    currentEntry=null;
+    resetEditor();
+    $('entryTitle').textContent='Lecture';
+    $('entryMeta').textContent='Aucune entrée sélectionnée.';
+    $('entryText').textContent='Le texte du journal apparaîtra ici.';
+    $('entryAnnotationCount').textContent='0';
     $('searchCorpus').disabled=false;
     renderEntries();
     renderAnnotationList();
@@ -309,6 +500,10 @@ $('corpusFile').addEventListener('change',async function(e){
 $('workspaceFile').addEventListener('change',async function(e){
   var file=e.target.files[0];
   if(!file)return;
+  if(selectionState&&!confirmLeaveEditor()){
+    e.target.value='';
+    return;
+  }
   try{
     var raw=await file.text();
     var loaded=[];
@@ -323,6 +518,8 @@ $('workspaceFile').addEventListener('change',async function(e){
       else throw new Error('Format de travail non reconnu');
     }
     annotations=loaded;
+    resolveIdentityFromAnnotations();
+    resetEditor();
     setDirty(false);
     refreshAll();
     updateStatus();
@@ -355,7 +552,7 @@ function renderEntries(){
   (corpus.documents||[]).forEach(function(doc){
     (doc.entries||[]).forEach(function(entry){
       total++;
-      var hay=[entry.date,entry.sourceLabel,entry.entryId,doc.label,entry.text].join(' ').toLocaleLowerCase('fr');
+      var hay=[entry.date,entry.dateStart,entry.dateEnd,entry.sourceLabel,entry.entryId,doc.label,entry.text].join(' ').toLocaleLowerCase('fr');
       if(q&&hay.indexOf(q)<0)return;
       shown++;
       var b=document.createElement('button');
@@ -364,7 +561,7 @@ function renderEntries(){
       b.dataset.documentId=doc.documentId;
 
       var label=document.createElement('span');
-      label.textContent=(entry.date||'sans date')+' — '+(entry.sourceLabel||entry.entryId);
+      label.textContent=entryTemporalLabel(entry)+' — '+(entry.sourceLabel||entry.entryId);
       var badge=document.createElement('span');
       badge.className='badge';
       badge.textContent=annotationCountFor(entry.entryId,doc.documentId);
@@ -379,19 +576,20 @@ function renderEntries(){
 }
 
 function openEntry(doc,entry){
+  if((!currentEntry||currentEntry.entryId!==entry.entryId||!currentDoc||currentDoc.documentId!==doc.documentId)&&!confirmLeaveEditor())return;
   currentDoc=doc;
   currentEntry=entry;
-  selectionState=null;
-  editingAnnotationId=null;
+  pendingSelection=null;
   document.querySelectorAll('.entry-btn').forEach(function(x){
     x.classList.toggle('active',x.dataset.entryId===entry.entryId&&x.dataset.documentId===doc.documentId);
   });
   $('entryTitle').textContent=entry.sourceLabel||entry.entryId;
-  $('entryMeta').textContent=(entry.date||'date inconnue')+' · '+(doc.label||doc.documentId)+' · '+(doc.sourceUnitId||'');
+  $('entryMeta').textContent=entryTemporalLabel(entry)+' · '+(doc.label||doc.documentId)+' · '+(doc.sourceUnitId||'');
   $('captureSelection').disabled=false;
   resetEditor();
   renderEntryText();
   renderAnnotationList();
+  setPendingSelectionInfo();
 }
 
 function renderEntryText(focusId){
@@ -406,9 +604,10 @@ function renderEntryText(focusId){
   var anns=annotations.filter(function(a){
     return a.target.documentId===currentDoc.documentId&&a.target.entryId===currentEntry.entryId&&a.target.start<text.length&&a.target.end>0;
   });
+  var draftTarget=selectionState&&!editingAnnotationId?selectionState:null;
   $('entryAnnotationCount').textContent=String(anns.length);
 
-  if(!anns.length){
+  if(!anns.length&&!draftTarget){
     box.textContent=text;
     return;
   }
@@ -419,90 +618,130 @@ function renderEntryText(focusId){
     boundaryMap[Math.max(0,Math.min(text.length,a.target.start))]=true;
     boundaryMap[Math.max(0,Math.min(text.length,a.target.end))]=true;
   });
+  if(draftTarget){
+    boundaryMap[Math.max(0,Math.min(text.length,draftTarget.start))]=true;
+    boundaryMap[Math.max(0,Math.min(text.length,draftTarget.end))]=true;
+  }
   var bounds=Object.keys(boundaryMap).map(Number).sort(function(a,b){return a-b;});
 
   for(var i=0;i<bounds.length-1;i++){
     var s=bounds[i],e=bounds[i+1];
     if(e<=s)continue;
     var covering=anns.filter(function(a){return a.target.start<e&&a.target.end>s;});
-    if(!covering.length){
+    var inDraft=!!(draftTarget&&draftTarget.start<e&&draftTarget.end>s);
+    if(!covering.length&&!inDraft){
       box.appendChild(document.createTextNode(text.slice(s,e)));
       continue;
     }
     var span=document.createElement('span');
-    span.className='ann-mark';
+    span.className=(covering.length?'ann-mark ':'')+(inDraft?'draft-mark':'');
     span.textContent=text.slice(s,e);
-    span.dataset.annotationIds=covering.map(function(a){return a.annotationId;}).join('|');
-    span.title=covering.length===1?'1 annotation':covering.length+' annotations superposées';
-    if(covering.length>1)span.setAttribute('data-count',String(covering.length));
-    if(focusId&&covering.some(function(a){return a.annotationId===focusId;}))span.classList.add('focused');
-    span.onclick=function(ev){
-      ev.stopPropagation();
-      var ids=this.dataset.annotationIds.split('|');
-      openAnnotation(ids[0]);
-    };
+    if(covering.length){
+      span.dataset.annotationIds=covering.map(function(a){return a.annotationId;}).join('|');
+      span.title=covering.length===1?'1 annotation enregistrée':covering.length+' annotations enregistrées superposées';
+      if(covering.length>1)span.setAttribute('data-count',String(covering.length));
+      if(focusId&&covering.some(function(a){return a.annotationId===focusId;}))span.classList.add('focused');
+      span.onclick=function(ev){
+        ev.stopPropagation();
+        var ids=this.dataset.annotationIds.split('|');
+        openAnnotation(ids[0]);
+      };
+    }else{
+      span.title='Passage sélectionné pour la nouvelle annotation';
+    }
     box.appendChild(span);
   }
 }
 
-$('captureSelection').onclick=function(){
-  if(!currentEntry)return;
+function readSelectionFromEntry(){
+  if(!currentEntry)return null;
   var sel=window.getSelection();
-  if(!sel||sel.rangeCount===0||sel.isCollapsed){
-    alert('Sélectionnez d’abord un passage dans le texte.');
-    return;
-  }
+  if(!sel||sel.rangeCount===0||sel.isCollapsed)return null;
   var range=sel.getRangeAt(0),container=$('entryText');
-  if(!container.contains(range.commonAncestorContainer)){
-    alert('La sélection doit se trouver dans le texte du journal.');
-    return;
-  }
+  if(!container.contains(range.commonAncestorContainer))return null;
   var pre=document.createRange();
   pre.selectNodeContents(container);
   pre.setEnd(range.startContainer,range.startOffset);
   var start=pre.toString().length;
   var text=range.toString();
   var end=start+text.length;
-  if(!text.trim()){
-    alert('Sélection vide.');
+  if(!text.trim())return null;
+  return {start:start,end:end,text:text};
+}
+
+function rememberPendingSelection(){
+  if(editingAnnotationId)return;
+  var captured=readSelectionFromEntry();
+  if(!captured)return;
+  pendingSelection=captured;
+  setPendingSelectionInfo();
+}
+
+$('entryText').addEventListener('mouseup',function(){setTimeout(rememberPendingSelection,0);});
+$('entryText').addEventListener('keyup',function(){setTimeout(rememberPendingSelection,0);});
+
+$('captureSelection').onclick=function(){
+  if(!currentEntry||editingAnnotationId)return;
+  var captured=pendingSelection||readSelectionFromEntry();
+  if(!captured){
+    alert('Sélectionnez d’abord un passage dans le texte.');
     return;
   }
-  editingAnnotationId=null;
-  selectionState={start:start,end:end};
-  clearFormFields();
-  $('editorMode').textContent='Nouvelle annotation';
-  $('selectionPreview').textContent=text;
-  $('saveAnnotation').disabled=false;
-  $('saveAnnotation').textContent='Enregistrer';
-  $('cancelEdit').classList.add('hidden');
-  $('deleteAnnotation').classList.add('hidden');
-  renderAnnotationList();
-  log('Sélection capturée : '+start+'–'+end+'. Aucun texte source ne sera stocké.');
-};
+  if(selectionState){
+    if(selectionState.start===captured.start&&selectionState.end===captured.end){
+      setPendingSelectionInfo();
+      return;
+    }
+    if(!confirm('Remplacer le passage actuellement figé par la nouvelle sélection ? Les champs déjà saisis seront conservés.'))return;
+  }
 
+  selectionState={start:captured.start,end:captured.end};
+  pendingSelection=null;
+  editingAnnotationId=null;
+  $('editorMode').textContent='Nouvelle annotation en cours';
+  $('selectionPreviewText').textContent=captured.text;
+  $('saveAnnotation').disabled=false;
+  $('saveAnnotation').textContent='Enregistrer l’annotation';
+  $('cancelEdit').classList.remove('hidden');
+  $('deleteAnnotation').classList.add('hidden');
+  setAnnotationFormEnabled(true);
+  formTouched=false;
+  updateWorkflowUI();
+  setPendingSelectionInfo();
+  renderEntryText();
+  renderAnnotationList();
+  log('Passage figé : '+selectionState.start+'–'+selectionState.end+'. Le texte source reste seulement affiché à l’écran.');
+};
 function clearFormFields(){
   $('spatial').value='unknown';
   $('social').value='unknown';
   $('valence').value='uncertain';
   $('intimacy').value='uncertain';
   $('affects').value='';
+  $('persons').value='';
   $('tags').value='';
   $('comment').value='';
 }
 
 function resetEditor(){
   selectionState=null;
+  pendingSelection=null;
   editingAnnotationId=null;
+  formTouched=false;
   $('editorMode').textContent='Nouvelle annotation';
-  $('selectionPreview').textContent='Aucun passage sélectionné.';
+  $('selectionPreviewText').textContent='Aucun passage sélectionné.';
   $('saveAnnotation').disabled=true;
-  $('saveAnnotation').textContent='Enregistrer';
+  $('saveAnnotation').textContent='Enregistrer l’annotation';
   $('cancelEdit').classList.add('hidden');
   $('deleteAnnotation').classList.add('hidden');
   clearFormFields();
+  setAnnotationFormEnabled(false);
+  updateWorkflowUI();
+  setPendingSelectionInfo();
 }
 
 function openAnnotation(id){
+  if(selectionState&&editingAnnotationId!==id&&!confirmLeaveEditor())return;
   var ann=annotations.find(function(a){return a.annotationId===id;});
   if(!ann)return;
   var ref=getEntryRef(ann.target.documentId,ann.target.entryId);
@@ -513,25 +752,31 @@ function openAnnotation(id){
       x.classList.toggle('active',x.dataset.entryId===ref.entry.entryId&&x.dataset.documentId===ref.doc.documentId);
     });
     $('entryTitle').textContent=ref.entry.sourceLabel||ref.entry.entryId;
-    $('entryMeta').textContent=(ref.entry.date||'date inconnue')+' · '+(ref.doc.label||ref.doc.documentId)+' · '+(ref.doc.sourceUnitId||'');
+    $('entryMeta').textContent=entryTemporalLabel(ref.entry)+' · '+(ref.doc.label||ref.doc.documentId)+' · '+(ref.doc.sourceUnitId||'');
     $('captureSelection').disabled=false;
   }
 
   editingAnnotationId=id;
   selectionState={start:ann.target.start,end:ann.target.end};
   $('editorMode').textContent='Modification de '+id;
-  $('selectionPreview').textContent=annotationSnippet(ann);
+  $('selectionPreviewText').textContent=annotationSnippet(ann);
   $('spatial').value=(ann.analysis.spatialContext&&ann.analysis.spatialContext[0])||'unknown';
   $('social').value=(ann.analysis.socialSphere&&ann.analysis.socialSphere[0])||'unknown';
   $('valence').value=ann.analysis.valence||'uncertain';
   $('intimacy').value=ann.analysis.intimacy||'uncertain';
   $('affects').value=(ann.analysis.affects||[]).join(', ');
+  $('persons').value=(ann.personMentions||[]).join(', ');
   $('tags').value=(ann.tags||[]).join(', ');
   $('comment').value=ann.comment||'';
   $('saveAnnotation').disabled=false;
-  $('saveAnnotation').textContent='Mettre à jour';
+  $('saveAnnotation').textContent='Mettre à jour l’annotation';
   $('cancelEdit').classList.remove('hidden');
   $('deleteAnnotation').classList.remove('hidden');
+  pendingSelection=null;
+  formTouched=false;
+  setAnnotationFormEnabled(true);
+  updateWorkflowUI();
+  setPendingSelectionInfo();
 
   renderEntryText(id);
   renderAnnotationList();
@@ -543,6 +788,7 @@ function openAnnotation(id){
 }
 
 $('cancelEdit').onclick=function(){
+  if(selectionState&&!confirm('Annuler l’annotation en cours ? Les informations non enregistrées seront perdues.'))return;
   resetEditor();
   renderEntryText();
   renderAnnotationList();
@@ -554,6 +800,7 @@ $('chooseWorkspace').onclick=async function(){
     workspaceHandle=await window.showDirectoryPicker({mode:'readwrite'});
     updateStatus();
     log('Workspace sélectionné : '+workspaceHandle.name);
+    await resolveIdentityFromWorkspace();
     await loadExistingAnnotations();
   }catch(err){
     if(err.name!=='AbortError')log('ERREUR workspace : '+err.name+' — '+err.message);
@@ -572,6 +819,7 @@ async function loadExistingAnnotations(){
     if(err.name==='NotFoundError')log('Aucun annotations.jsonl existant : il sera créé au premier enregistrement.');
     else throw err;
   }
+  resolveIdentityFromAnnotations();
   setDirty(false);
   refreshAll();
   checkCorpusCompatibility();
@@ -580,10 +828,10 @@ async function loadExistingAnnotations(){
 function buildAnnotationFromForm(existing){
   var now=new Date().toISOString();
   return sanitizeAnnotation({
-    schemaVersion:'0.1.0',
+    schemaVersion:'0.2.0',
     annotationId:existing?existing.annotationId:uuid(),
     corpusId:corpus.corpusId,
-    annotatorId:existing?existing.annotatorId:null,
+    annotatorId:existing?(existing.annotatorId||resolvedAnnotatorId):resolvedAnnotatorId,
     target:{
       scope:'segment',
       documentId:currentDoc.documentId,
@@ -603,6 +851,7 @@ function buildAnnotationFromForm(existing){
       affects:csv($('affects').value),
       confidence:existing?existing.analysis.confidence:null
     },
+    personMentions:csv($('persons').value),
     tags:csv($('tags').value),
     entityIds:existing?existing.entityIds:[],
     comment:$('comment').value.trim()
@@ -610,6 +859,7 @@ function buildAnnotationFromForm(existing){
 }
 
 $('saveAnnotation').onclick=async function(){
+  if(savingAnnotation)return;
   if(!corpus||!currentEntry||!selectionState){
     alert('Aucune sélection active.');
     return;
@@ -619,6 +869,8 @@ $('saveAnnotation').onclick=async function(){
     return;
   }
 
+  savingAnnotation=true;
+  $('saveAnnotation').disabled=true;
   var oldSnapshot=annotations.slice();
   var existing=null;
   if(editingAnnotationId){
@@ -636,10 +888,14 @@ $('saveAnnotation').onclick=async function(){
     log('Annotation '+action+'. Le texte source reste absent du fichier.');
     resetEditor();
     refreshAll();
+    showSaveSuccess(existing?'Annotation mise à jour.':'Annotation enregistrée.');
   }catch(err){
     annotations=oldSnapshot;
     log('ERREUR sauvegarde : '+err.message);
     alert('Échec de la sauvegarde.');
+    $('saveAnnotation').disabled=false;
+  }finally{
+    savingAnnotation=false;
   }
 };
 
@@ -682,16 +938,29 @@ async function writeJsonlDirect(){
 }
 
 function updateSuggestions(){
-  var tags={},affects={};
+  var tags={},affects={},persons={};
   annotations.forEach(function(a){
     (a.tags||[]).forEach(function(x){tags[x]=true;});
     (a.analysis.affects||[]).forEach(function(x){affects[x]=true;});
+    (a.personMentions||[]).forEach(function(x){persons[x]=true;});
   });
   $('tagSuggestions').innerHTML='';
   Object.keys(tags).sort().forEach(function(x){var o=document.createElement('option');o.value=x;$('tagSuggestions').appendChild(o);});
   $('affectSuggestions').innerHTML='';
   Object.keys(affects).sort().forEach(function(x){var o=document.createElement('option');o.value=x;$('affectSuggestions').appendChild(o);});
+  $('personSuggestions').innerHTML='';
+  Object.keys(persons).sort().forEach(function(x){var o=document.createElement('option');o.value=x;$('personSuggestions').appendChild(o);});
 }
+
+$('annotationForm').querySelectorAll('input,select,textarea').forEach(function(el){
+  var mark=function(){
+    if(!selectionState)return;
+    formTouched=true;
+    updateWorkflowUI();
+  };
+  el.addEventListener('input',mark);
+  el.addEventListener('change',mark);
+});
 
 $('filterValence').addEventListener('change',renderAnnotationList);
 $('filterScope').addEventListener('change',renderAnnotationList);
@@ -709,7 +978,7 @@ function renderAnnotationList(){
     if(scope==='current'&&currentEntry&&currentDoc&&(a.target.entryId!==currentEntry.entryId||a.target.documentId!==currentDoc.documentId))return false;
     if(scope==='current'&&!currentEntry)return false;
     if(q){
-      var hay=[a.comment,(a.tags||[]).join(' '),(a.analysis.affects||[]).join(' '),annotationSnippet(a)].join(' ').toLocaleLowerCase('fr');
+      var hay=[a.comment,(a.tags||[]).join(' '),(a.personMentions||[]).join(' '),(a.analysis.affects||[]).join(' '),annotationSnippet(a)].join(' ').toLocaleLowerCase('fr');
       if(hay.indexOf(q)<0)return false;
     }
     return true;
@@ -740,6 +1009,9 @@ function renderAnnotationList(){
     if(a.analysis.valence){
       var c=document.createElement('span');c.className='chip '+a.analysis.valence;c.textContent=a.analysis.valence;chips.appendChild(c);
     }
+    (a.personMentions||[]).slice(0,3).forEach(function(person){
+      var c=document.createElement('span');c.className='chip';c.textContent='👤 '+person;chips.appendChild(c);
+    });
     (a.tags||[]).slice(0,5).forEach(function(tag){
       var c=document.createElement('span');c.className='chip';c.textContent='#'+tag;chips.appendChild(c);
     });
@@ -768,6 +1040,10 @@ function downloadText(filename,text,mime){
 }
 
 $('portableSaveBtn').onclick=function(){
+  if(selectionState){
+    alert('Une annotation est en cours. Enregistrez-la ou annulez-la avant de sauvegarder le travail.');
+    return;
+  }
   var payload=safeAnnotations().map(function(a){return JSON.stringify(a);}).join('\n')+'\n';
   downloadText('annotations-journallab.jsonl',payload,'application/x-ndjson;charset=utf-8');
   setDirty(false);
@@ -776,6 +1052,10 @@ $('portableSaveBtn').onclick=function(){
 };
 
 $('exportBtn').onclick=async function(){
+  if(selectionState){
+    alert('Une annotation est en cours. Enregistrez-la ou annulez-la avant d’exporter la remise.');
+    return;
+  }
   var exportObj={
     exportVersion:'0.1.0',
     corpusId:corpus&&corpus.corpusId?safeString(corpus.corpusId,300):null,
@@ -804,7 +1084,11 @@ window.addEventListener('beforeunload',function(e){
   if(portableMode&&dirty){e.preventDefault();e.returnValue='';}
 });
 
+resolveIdentityFromUrl();
 detectStorageMode();
+setAnnotationFormEnabled(false);
+updateWorkflowUI();
+setPendingSelectionInfo();
 updateStatus();
 renderAnnotationList();
 </script>
