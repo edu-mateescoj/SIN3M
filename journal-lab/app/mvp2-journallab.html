@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; connect-src http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob:; media-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
-  <title>JournalLab — MVP2</title>
+  <title>JournalLab — MVP2.1</title>
   <style>
     :root{font-family:Arial,Helvetica,sans-serif;color:#1f2937;background:#f5f6f8}
     *{box-sizing:border-box}
@@ -64,19 +64,51 @@
 
     .log{margin-top:10px;padding:9px;background:#111827;color:#e5e7eb;border-radius:7px;min-height:65px;max-height:130px;overflow:auto;font:11px/1.42 Consolas,monospace;white-space:pre-wrap}
 
+    /* Zones conceptuelles : la couleur complète les titres, elle ne porte jamais seule le sens. */
+    .zone-corpus{border-top:5px solid #6e91b8;background:#f7faff}
+    .zone-reading{border-top:5px solid #c59a3a;background:#fffdf7}
+    .zone-annotation{border:1px solid #a8c7ae;border-left:5px solid #6f9d78;background:#f7fbf7;border-radius:8px;padding:10px;margin-bottom:12px}
+    .zone-library{border:1px solid #b8bfd0;border-left:5px solid #7b84a3;background:#f8f8fc;border-radius:8px;padding:10px}
+    .draft-mark{border-radius:3px;padding:1px 0;background:#ffe2a3;box-shadow:inset 0 -3px 0 #d18b22}
+    .draft-mark.focused{outline:2px solid #a86400;outline-offset:2px}
+    .workflow{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:7px 0 10px}
+    .workflow-step{border:1px solid #c7cdd3;border-radius:7px;padding:6px 7px;background:#fff;font-size:.76rem;line-height:1.25}
+    .workflow-step strong{display:block;font-size:.78rem}
+    .workflow-step.active{border-color:#8e722f;background:#fff7dc}
+    .workflow-step.done{border-color:#7da086;background:#eff8f1}
+    .workflow-step.locked{opacity:.58}
+    .selection.locked{background:#fff0c7;border-left-color:#c47d13}
+    .selection .selection-label{display:block;font:700 .72rem Arial,sans-serif;color:#77500e;margin-bottom:4px}
+    .success-note{margin:7px 0;padding:7px 9px;border:1px solid #a8c7ae;background:#eff8f1;border-radius:6px;font-size:.82rem}
+    .annotation-form-disabled{opacity:.55}
+    .annotation-form-disabled input,.annotation-form-disabled select,.annotation-form-disabled textarea{cursor:not-allowed}
+    .has-tip{position:relative}
+    .has-tip:hover::after,.has-tip:focus-visible::after{
+      content:attr(data-tooltip);position:absolute;z-index:30;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);
+      width:max-content;max-width:320px;padding:7px 9px;border-radius:6px;background:#1f2937;color:#fff;font-size:.76rem;line-height:1.35;
+      white-space:normal;box-shadow:0 3px 12px rgba(0,0,0,.18);pointer-events:none
+    }
+    .has-tip:hover::before,.has-tip:focus-visible::before{
+      content:"";position:absolute;z-index:31;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);
+      border:5px solid transparent;border-top-color:#1f2937;pointer-events:none
+    }
+    .action-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+    .action-help{font-size:.78rem;color:#596573}
+    .blocked-note{font-size:.79rem;color:#7b5a12;margin-top:6px}
+
     @media(max-width:1050px){main{grid-template-columns:220px 1fr}.right{grid-column:1/-1}.annotation-list{max-height:220px}}
     @media(max-width:720px){main{display:block}section,aside{margin-bottom:10px}.status{width:100%;margin-left:0}.entries{max-height:260px}.grid2,.filters{grid-template-columns:1fr}.filters .wide{grid-column:auto}}
   </style>
 </head>
 <body>
 <header>
-  <h1>JournalLab — MVP2 local</h1>
+  <h1>JournalLab — MVP2.1 · annotation guidée</h1>
   <div class="toolbar">
     <label class="file-label">1. Charger le corpus<input id="corpusFile" type="file" accept="application/json,.json"></label>
-    <button id="chooseWorkspace">2. Choisir le dossier de travail</button>
+    <button id="chooseWorkspace" class="has-tip" data-tooltip="Autorise JournalLab à lire et écrire uniquement dans le dossier que vous choisissez.">2. Choisir le dossier de travail</button>
     <label id="portableLoadLabel" class="file-label hidden">2. Charger un travail<input id="workspaceFile" type="file" accept="application/json,.json,.jsonl"></label>
-    <button id="portableSaveBtn" class="hidden">Sauvegarder mon travail</button>
-    <button id="exportBtn">Exporter la remise</button>
+    <button id="portableSaveBtn" class="hidden has-tip" data-tooltip="Télécharge une copie locale de toutes les annotations déjà enregistrées.">Sauvegarder mon travail</button>
+    <button id="exportBtn" class="has-tip" data-tooltip="Crée la remise à partir des annotations déjà enregistrées. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
     <span id="status" class="status">Initialisation…</span>
   </div>
   <div id="modeNotice" class="notice"></div>
@@ -84,8 +116,8 @@
 </header>
 
 <main>
-  <section>
-    <h2>Corpus</h2>
+  <section class="zone-corpus">
+    <h2>1 · Choisir une entrée</h2>
     <div class="left-tools">
       <input id="searchCorpus" type="search" placeholder="Rechercher dans le corpus…" disabled>
       <div id="searchInfo" class="hint">Chargez d’abord le corpus.</div>
@@ -93,7 +125,7 @@
     <div id="entries" class="entries"><span class="hint">Aucune entrée chargée.</span></div>
   </section>
 
-  <section>
+  <section class="zone-reading">
     <div class="reader-head">
       <div>
         <h2 id="entryTitle">Lecture</h2>
@@ -102,16 +134,27 @@
       <span id="entryAnnotationCount" class="badge">0</span>
     </div>
     <div id="entryText" class="text">Le texte du journal apparaîtra ici.</div>
-    <p class="hint">Les surlignages sont reconstruits à partir des offsets enregistrés ; le texte du corpus n’est jamais recopié dans les annotations.</p>
-    <button id="captureSelection" class="primary" disabled>Annoter la sélection</button>
+    <p class="hint">Sélectionnez un passage dans le texte. JournalLab mémorise aussitôt la sélection ; vous pouvez ensuite cliquer sans crainte sur le bouton.</p>
+    <div class="action-row">
+      <button id="captureSelection" class="primary has-tip" data-tooltip="Fige le passage sélectionné comme cible de la nouvelle annotation. Rien n’est encore enregistré." disabled>Annoter la sélection</button>
+      <span id="pendingSelectionInfo" class="action-help">Aucune sélection en attente.</span>
+    </div>
   </section>
 
   <aside class="right">
-    <h2>Annotation</h2>
-    <div id="editorMode" class="mode-title">Nouvelle annotation</div>
-    <div id="selectionPreview" class="selection">Aucun passage sélectionné.</div>
+    <div class="zone-annotation">
+      <h2>2 · Analyser le passage</h2>
+      <div class="workflow" aria-label="Workflow d’annotation">
+        <div id="wfSelect" class="workflow-step active"><strong>1. Sélection</strong>Choisir puis figer un passage</div>
+        <div id="wfAnalyze" class="workflow-step locked"><strong>2. Analyse</strong>Renseigner les champs</div>
+        <div id="wfSave" class="workflow-step locked"><strong>3. Enregistrer</strong>Valider l’annotation</div>
+      </div>
+      <div id="editorMode" class="mode-title">Nouvelle annotation</div>
+      <div id="selectionPreview" class="selection"><span class="selection-label">PASSAGE CIBLE</span><span id="selectionPreviewText">Aucun passage sélectionné.</span></div>
+      <div id="saveSuccess" class="success-note hidden"></div>
 
-    <div class="grid2">
+      <div id="annotationForm" class="annotation-form-disabled">
+      <div class="grid2">
       <label class="field">Contexte spatial<select id="spatial"><option value="unknown">NSP</option><option value="home">Maison</option><option value="school">École</option><option value="work">Travail</option><option value="public">Espace public</option><option value="travel">Déplacement</option><option value="other">Autre</option></select></label>
       <label class="field">Sphère sociale<select id="social"><option value="unknown">NSP</option><option value="family">Famille</option><option value="friends">Amis</option><option value="school">École</option><option value="work">Travail</option><option value="romantic">Affectif/amoureux</option><option value="public">Public/social</option><option value="solitary">Solitaire</option><option value="other">Autre</option></select></label>
       <label class="field">Tonalité<select id="valence"><option value="uncertain">NSP</option><option value="positive">Positive</option><option value="negative">Négative</option><option value="neutral">Neutre</option><option value="mixed">Mixte</option></select></label>
@@ -124,13 +167,17 @@
     <datalist id="tagSuggestions"></datalist>
     <label class="field">Commentaire de l’élève<textarea id="comment" placeholder="Analyse, justification, remarque…"></textarea></label>
 
-    <div class="form-actions">
-      <button id="saveAnnotation" class="primary" disabled>Enregistrer</button>
-      <button id="cancelEdit" class="hidden">Annuler la modification</button>
-      <button id="deleteAnnotation" class="danger hidden">Supprimer</button>
+      <div class="form-actions">
+        <button id="saveAnnotation" class="primary has-tip" data-tooltip="Enregistre cette annotation dans le travail local. Le passage source n’est jamais copié dans le fichier." disabled>Enregistrer l’annotation</button>
+        <button id="cancelEdit" class="hidden has-tip" data-tooltip="Abandonne l’annotation ou la modification en cours sans toucher aux annotations déjà enregistrées.">Annuler</button>
+        <button id="deleteAnnotation" class="danger hidden has-tip" data-tooltip="Supprime uniquement cette annotation enregistrée ; le corpus reste intact.">Supprimer</button>
+      </div>
+      <div id="formBlockedNote" class="blocked-note">Les champs sont verrouillés tant qu’aucun passage n’a été figé.</div>
+      </div>
     </div>
 
-    <h3>Annotations enregistrées</h3>
+    <div class="zone-library">
+    <h3>3 · Annotations enregistrées</h3>
     <div class="filters">
       <select id="filterValence">
         <option value="">Toutes tonalités</option>
@@ -148,6 +195,7 @@
     </div>
     <div id="annotationCount" class="hint">0 annotation enregistrée.</div>
     <div id="annotationList" class="annotation-list"></div>
+    </div>
 
     <details>
       <summary class="hint" style="cursor:pointer;margin-top:10px">Diagnostic local</summary>
