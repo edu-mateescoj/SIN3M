@@ -114,7 +114,7 @@
     <button id="chooseWorkspace" class="has-tip tip-down" title="Choisir le dossier local de travail" data-tooltip="Autorise JournalLab à lire et écrire uniquement dans le dossier que vous choisissez.">2. Choisir le dossier de travail</button>
     <label id="portableLoadLabel" class="file-label hidden">2. Charger un travail<input id="workspaceFile" type="file" accept="application/json,.json,.jsonl"></label>
     <button id="portableSaveBtn" class="hidden has-tip tip-down" title="Sauvegarder les annotations enregistrées" data-tooltip="Télécharge une copie locale de toutes les annotations déjà enregistrées.">Sauvegarder mon travail</button>
-    <button id="exportBtn" class="has-tip tip-down" title="Exporter la remise" data-tooltip="Crée la remise à partir des annotations déjà enregistrées. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
+    <button id="exportBtn" class="has-tip tip-down" title="Exporter la remise" data-tooltip="En mode direct, crée remise-journallab.json dans le dossier de travail choisi. En mode portable, télécharge le fichier. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
     <span id="identityBadge" class="identity-badge hidden" title="Identité détectée automatiquement"></span>
     <span id="exportLocation" class="hint">Export : emplacement à déterminer</span>
     <span id="status" class="status">Initialisation…</span>
@@ -839,7 +839,7 @@ function buildAnnotationFromForm(existing){
       entryId:currentEntry.entryId,
       start:selectionState.start,
       end:selectionState.end,
-      sourceHash:existing?existing.target.sourceHash:null
+      sourceHash:(existing&&existing.target.sourceHash)?existing.target.sourceHash:(currentEntry.textHash||null)
     },
     createdAt:existing?existing.createdAt:now,
     updatedAt:now,
@@ -995,7 +995,7 @@ function renderAnnotationList(){
     head.className='ann-card-head';
     var ref=getEntryRef(a.target.documentId,a.target.entryId);
     var left=document.createElement('span');
-    left.textContent=ref?(ref.entry.date||ref.entry.entryId):a.target.entryId;
+    left.textContent=ref?entryTemporalLabel(ref.entry):a.target.entryId;
     var right=document.createElement('span');
     right.textContent=a.target.start+'–'+a.target.end;
     head.appendChild(left);head.appendChild(right);
