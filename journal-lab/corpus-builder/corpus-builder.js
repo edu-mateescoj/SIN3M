@@ -122,15 +122,27 @@ function inferNotebookId(fileName) {
   return 'CAHIER-' + String(Number(match[1]));
 }
 
-function maybeSuggestDocumentFromFile(fileName) {
-  const suggested = inferNotebookId(fileName);
-  if (!suggested) return;
+function applyNotebookSuggestion(suggested, origin) {
+  if (!suggested) return false;
   const current = $('documentId').value.trim();
   if (!current || current === 'JOURNAL-01' || current === 'JOURNAL') {
     $('documentId').value = suggested;
     $('documentLabel').value = 'Cahier ' + suggested.replace('CAHIER-', '');
-    setStatus('Identifiant de document proposé depuis le nom du fichier : ' + suggested + ' (modifiable).');
+    setStatus('Identifiant de document proposé ' + origin + ' : ' + suggested + ' (modifiable).');
+    return true;
   }
+  return false;
+}
+
+function maybeSuggestDocumentFromFile(fileName) {
+  return applyNotebookSuggestion(inferNotebookId(fileName), 'depuis le nom du fichier');
+}
+
+function maybeSuggestDocumentFromText(text) {
+  const head = String(text || '').slice(0, 3000);
+  const match = head.match(/\bcahier[\s:._-]*(?:n(?:°|o)?\s*)?(\d{1,4})\b/i);
+  if (!match) return false;
+  return applyNotebookSuggestion('CAHIER-' + String(Number(match[1])), 'depuis le texte extrait');
 }
 
 function nextSourceId(kind) {
@@ -549,6 +561,7 @@ async function extractAll() {
   }
 
   state.blocks = newBlocks;
+  if (state.blocks.length) maybeSuggestDocumentFromText(state.blocks.map(b => b.text).join('\n\n'));
   state.sourceRevision += 1;
   state.segmentationRevision = null;
   state.segmentationSourceHash = null;
