@@ -277,6 +277,7 @@ function resolveIdentityFromUrl(){
 }
 
 async function resolveIdentityFromWorkspace(){
+  if(resolvedAnnotatorId)return true;
   if(!workspaceHandle)return false;
   var names=['.journallab-identity.json','identity.json'];
   for(var i=0;i<names.length;i++){
