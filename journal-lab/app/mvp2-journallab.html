@@ -92,6 +92,10 @@
       content:"";position:absolute;z-index:31;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);
       border:5px solid transparent;border-top-color:#1f2937;pointer-events:none
     }
+    .has-tip.tip-down:hover::after,.has-tip.tip-down:focus-visible::after{bottom:auto;top:calc(100% + 8px)}
+    .has-tip.tip-down:hover::before,.has-tip.tip-down:focus-visible::before{
+      bottom:auto;top:calc(100% + 3px);border-top-color:transparent;border-bottom-color:#1f2937
+    }
     .action-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
     .action-help{font-size:.78rem;color:#596573}
     .blocked-note{font-size:.79rem;color:#7b5a12;margin-top:6px}
@@ -105,10 +109,10 @@
   <h1>JournalLab — MVP2.1 · annotation guidée</h1>
   <div class="toolbar">
     <label class="file-label">1. Charger le corpus<input id="corpusFile" type="file" accept="application/json,.json"></label>
-    <button id="chooseWorkspace" class="has-tip" data-tooltip="Autorise JournalLab à lire et écrire uniquement dans le dossier que vous choisissez.">2. Choisir le dossier de travail</button>
+    <button id="chooseWorkspace" class="has-tip tip-down" title="Choisir le dossier local de travail" data-tooltip="Autorise JournalLab à lire et écrire uniquement dans le dossier que vous choisissez.">2. Choisir le dossier de travail</button>
     <label id="portableLoadLabel" class="file-label hidden">2. Charger un travail<input id="workspaceFile" type="file" accept="application/json,.json,.jsonl"></label>
-    <button id="portableSaveBtn" class="hidden has-tip" data-tooltip="Télécharge une copie locale de toutes les annotations déjà enregistrées.">Sauvegarder mon travail</button>
-    <button id="exportBtn" class="has-tip" data-tooltip="Crée la remise à partir des annotations déjà enregistrées. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
+    <button id="portableSaveBtn" class="hidden has-tip tip-down" title="Sauvegarder les annotations enregistrées" data-tooltip="Télécharge une copie locale de toutes les annotations déjà enregistrées.">Sauvegarder mon travail</button>
+    <button id="exportBtn" class="has-tip tip-down" title="Exporter la remise" data-tooltip="Crée la remise à partir des annotations déjà enregistrées. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
     <span id="status" class="status">Initialisation…</span>
   </div>
   <div id="modeNotice" class="notice"></div>
@@ -136,7 +140,7 @@
     <div id="entryText" class="text">Le texte du journal apparaîtra ici.</div>
     <p class="hint">Sélectionnez un passage dans le texte. JournalLab mémorise aussitôt la sélection ; vous pouvez ensuite cliquer sans crainte sur le bouton.</p>
     <div class="action-row">
-      <button id="captureSelection" class="primary has-tip" data-tooltip="Fige le passage sélectionné comme cible de la nouvelle annotation. Rien n’est encore enregistré." disabled>Annoter la sélection</button>
+      <button id="captureSelection" class="primary has-tip" title="Figer le passage sélectionné" data-tooltip="Fige le passage sélectionné comme cible de la nouvelle annotation. Rien n’est encore enregistré." disabled>Annoter la sélection</button>
       <span id="pendingSelectionInfo" class="action-help">Aucune sélection en attente.</span>
     </div>
   </section>
@@ -168,9 +172,9 @@
     <label class="field">Commentaire de l’élève<textarea id="comment" placeholder="Analyse, justification, remarque…"></textarea></label>
 
       <div class="form-actions">
-        <button id="saveAnnotation" class="primary has-tip" data-tooltip="Enregistre cette annotation dans le travail local. Le passage source n’est jamais copié dans le fichier." disabled>Enregistrer l’annotation</button>
-        <button id="cancelEdit" class="hidden has-tip" data-tooltip="Abandonne l’annotation ou la modification en cours sans toucher aux annotations déjà enregistrées.">Annuler</button>
-        <button id="deleteAnnotation" class="danger hidden has-tip" data-tooltip="Supprime uniquement cette annotation enregistrée ; le corpus reste intact.">Supprimer</button>
+        <button id="saveAnnotation" class="primary has-tip" title="Enregistrer cette annotation" data-tooltip="Enregistre cette annotation dans le travail local. Le passage source n’est jamais copié dans le fichier." disabled>Enregistrer l’annotation</button>
+        <button id="cancelEdit" class="hidden has-tip" title="Annuler l’annotation en cours" data-tooltip="Abandonne l’annotation ou la modification en cours sans toucher aux annotations déjà enregistrées.">Annuler</button>
+        <button id="deleteAnnotation" class="danger hidden has-tip" title="Supprimer cette annotation" data-tooltip="Supprime uniquement cette annotation enregistrée ; le corpus reste intact.">Supprimer</button>
       </div>
       <div id="formBlockedNote" class="blocked-note">Les champs sont verrouillés tant qu’aucun passage n’a été figé.</div>
       </div>
@@ -394,8 +398,19 @@ function annotationCountFor(entryId,documentId){
 $('corpusFile').addEventListener('change',async function(e){
   var file=e.target.files[0];
   if(!file)return;
+  if(selectionState&&!confirmLeaveEditor()){
+    e.target.value='';
+    return;
+  }
   try{
     corpus=JSON.parse(await file.text());
+    currentDoc=null;
+    currentEntry=null;
+    resetEditor();
+    $('entryTitle').textContent='Lecture';
+    $('entryMeta').textContent='Aucune entrée sélectionnée.';
+    $('entryText').textContent='Le texte du journal apparaîtra ici.';
+    $('entryAnnotationCount').textContent='0';
     $('searchCorpus').disabled=false;
     renderEntries();
     renderAnnotationList();
@@ -412,6 +427,10 @@ $('corpusFile').addEventListener('change',async function(e){
 $('workspaceFile').addEventListener('change',async function(e){
   var file=e.target.files[0];
   if(!file)return;
+  if(selectionState&&!confirmLeaveEditor()){
+    e.target.value='';
+    return;
+  }
   try{
     var raw=await file.text();
     var loaded=[];
@@ -426,6 +445,7 @@ $('workspaceFile').addEventListener('change',async function(e){
       else throw new Error('Format de travail non reconnu');
     }
     annotations=loaded;
+    resetEditor();
     setDirty(false);
     refreshAll();
     updateStatus();
