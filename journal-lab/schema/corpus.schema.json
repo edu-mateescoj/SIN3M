@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "corpusId", "version", "title", "documents"],
   "properties": {
-    "schemaVersion": {"type": "string", "const": "0.2.0"},
+    "schemaVersion": {"type": "string", "const": "0.3.0"},
     "corpusId": {"type": "string", "minLength": 1},
     "version": {"type": "string", "minLength": 1},
     "title": {"type": "string", "minLength": 1},
@@ -60,7 +60,9 @@
       "required": ["entryId", "text"],
       "properties": {
         "entryId": {"type": "string", "minLength": 1},
-        "date": {"type": ["string", "null"]},
+        "date": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+        "dateStart": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+        "dateEnd": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
         "datePrecision": {
           "enum": ["exact", "approximate", "range", "unknown", null]
         },
