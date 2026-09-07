@@ -116,6 +116,7 @@
     <button id="portableSaveBtn" class="hidden has-tip tip-down" title="Sauvegarder les annotations enregistrées" data-tooltip="Télécharge une copie locale de toutes les annotations déjà enregistrées.">Sauvegarder mon travail</button>
     <button id="exportBtn" class="has-tip tip-down" title="Exporter la remise" data-tooltip="Crée la remise à partir des annotations déjà enregistrées. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
     <span id="identityBadge" class="identity-badge hidden" title="Identité détectée automatiquement"></span>
+    <span id="exportLocation" class="hint">Export : emplacement à déterminer</span>
     <span id="status" class="status">Initialisation…</span>
   </div>
   <div id="modeNotice" class="notice"></div>
@@ -170,6 +171,8 @@
 
     <label class="field">Affects <span class="hint">séparés par des virgules</span><input id="affects" list="affectSuggestions" placeholder="inquiétude, joie, honte…"></label>
     <datalist id="affectSuggestions"></datalist>
+    <label class="field">Personnages mentionnés <span class="hint">séparés par des virgules</span><input id="persons" list="personSuggestions" placeholder="mère, père, petit ami…"></label>
+    <datalist id="personSuggestions"></datalist>
     <label class="field">Tags libres <span class="hint">séparés par des virgules</span><input id="tags" list="tagSuggestions" placeholder="famille, conflit, attente…"></label>
     <datalist id="tagSuggestions"></datalist>
     <label class="field">Commentaire de l’élève<textarea id="comment" placeholder="Analyse, justification, remarque…"></textarea></label>
@@ -364,7 +367,7 @@ function sanitizeAnnotation(a){
   var start=Number.isInteger(t.start)&&t.start>=0?t.start:0;
   var end=Number.isInteger(t.end)&&t.end>start?t.end:start+1;
   return {
-    schemaVersion:'0.1.0',
+    schemaVersion:'0.2.0',
     annotationId:safeString(a.annotationId,200)||uuid(),
     corpusId:safeString(a.corpusId,300)||'UNKNOWN',
     annotatorId:safeString(a.annotatorId,300),
@@ -387,6 +390,7 @@ function sanitizeAnnotation(a){
       affects:safeArray(analysis.affects,100,200),
       confidence:enumValue(analysis.confidence,['high','medium','low','unknown',null],null)
     },
+    personMentions:safeArray(a.personMentions,200,200),
     tags:safeArray(a.tags,200,200),
     entityIds:safeArray(a.entityIds,200,300),
     comment:safeString(a.comment,20000)||''
@@ -402,6 +406,11 @@ function updateStatus(){
   var corpusStatus=corpus?'Corpus chargé':'Corpus non chargé';
   var storageStatus=portableMode?('Mode portable'+(dirty?' · non sauvegardé':'')):(workspaceHandle?'Workspace : '+workspaceHandle.name:'Dossier non choisi');
   $('status').textContent=corpusStatus+' · '+storageStatus;
+  if($('exportLocation')){
+    $('exportLocation').textContent=portableMode
+      ? 'Export : téléchargement navigateur'
+      : (workspaceHandle?'Export : dossier '+workspaceHandle.name:'Export : futur dossier de travail');
+  }
 }
 function detectStorageMode(){
   directFsAvailable=typeof window.showDirectoryPicker==='function';
@@ -450,6 +459,13 @@ function annotationSnippet(ann){
 }
 function annotationCountFor(entryId,documentId){
   return annotations.filter(function(a){return a.target.entryId===entryId&&a.target.documentId===documentId;}).length;
+}
+function entryTemporalLabel(entry){
+  if(!entry)return 'date inconnue';
+  var start=entry.dateStart||entry.date||null;
+  var end=entry.dateEnd||entry.date||null;
+  if(start&&end&&start!==end)return start+' → '+end;
+  return start||end||entry.date||'date inconnue';
 }
 
 $('corpusFile').addEventListener('change',async function(e){
@@ -536,7 +552,7 @@ function renderEntries(){
   (corpus.documents||[]).forEach(function(doc){
     (doc.entries||[]).forEach(function(entry){
       total++;
-      var hay=[entry.date,entry.sourceLabel,entry.entryId,doc.label,entry.text].join(' ').toLocaleLowerCase('fr');
+      var hay=[entry.date,entry.dateStart,entry.dateEnd,entry.sourceLabel,entry.entryId,doc.label,entry.text].join(' ').toLocaleLowerCase('fr');
       if(q&&hay.indexOf(q)<0)return;
       shown++;
       var b=document.createElement('button');
@@ -545,7 +561,7 @@ function renderEntries(){
       b.dataset.documentId=doc.documentId;
 
       var label=document.createElement('span');
-      label.textContent=(entry.date||'sans date')+' — '+(entry.sourceLabel||entry.entryId);
+      label.textContent=entryTemporalLabel(entry)+' — '+(entry.sourceLabel||entry.entryId);
       var badge=document.createElement('span');
       badge.className='badge';
       badge.textContent=annotationCountFor(entry.entryId,doc.documentId);
@@ -568,7 +584,7 @@ function openEntry(doc,entry){
     x.classList.toggle('active',x.dataset.entryId===entry.entryId&&x.dataset.documentId===doc.documentId);
   });
   $('entryTitle').textContent=entry.sourceLabel||entry.entryId;
-  $('entryMeta').textContent=(entry.date||'date inconnue')+' · '+(doc.label||doc.documentId)+' · '+(doc.sourceUnitId||'');
+  $('entryMeta').textContent=entryTemporalLabel(entry)+' · '+(doc.label||doc.documentId)+' · '+(doc.sourceUnitId||'');
   $('captureSelection').disabled=false;
   resetEditor();
   renderEntryText();
@@ -702,6 +718,7 @@ function clearFormFields(){
   $('valence').value='uncertain';
   $('intimacy').value='uncertain';
   $('affects').value='';
+  $('persons').value='';
   $('tags').value='';
   $('comment').value='';
 }
@@ -735,7 +752,7 @@ function openAnnotation(id){
       x.classList.toggle('active',x.dataset.entryId===ref.entry.entryId&&x.dataset.documentId===ref.doc.documentId);
     });
     $('entryTitle').textContent=ref.entry.sourceLabel||ref.entry.entryId;
-    $('entryMeta').textContent=(ref.entry.date||'date inconnue')+' · '+(ref.doc.label||ref.doc.documentId)+' · '+(ref.doc.sourceUnitId||'');
+    $('entryMeta').textContent=entryTemporalLabel(ref.entry)+' · '+(ref.doc.label||ref.doc.documentId)+' · '+(ref.doc.sourceUnitId||'');
     $('captureSelection').disabled=false;
   }
 
@@ -748,6 +765,7 @@ function openAnnotation(id){
   $('valence').value=ann.analysis.valence||'uncertain';
   $('intimacy').value=ann.analysis.intimacy||'uncertain';
   $('affects').value=(ann.analysis.affects||[]).join(', ');
+  $('persons').value=(ann.personMentions||[]).join(', ');
   $('tags').value=(ann.tags||[]).join(', ');
   $('comment').value=ann.comment||'';
   $('saveAnnotation').disabled=false;
@@ -810,7 +828,7 @@ async function loadExistingAnnotations(){
 function buildAnnotationFromForm(existing){
   var now=new Date().toISOString();
   return sanitizeAnnotation({
-    schemaVersion:'0.1.0',
+    schemaVersion:'0.2.0',
     annotationId:existing?existing.annotationId:uuid(),
     corpusId:corpus.corpusId,
     annotatorId:existing?(existing.annotatorId||resolvedAnnotatorId):resolvedAnnotatorId,
@@ -833,6 +851,7 @@ function buildAnnotationFromForm(existing){
       affects:csv($('affects').value),
       confidence:existing?existing.analysis.confidence:null
     },
+    personMentions:csv($('persons').value),
     tags:csv($('tags').value),
     entityIds:existing?existing.entityIds:[],
     comment:$('comment').value.trim()
@@ -919,15 +938,18 @@ async function writeJsonlDirect(){
 }
 
 function updateSuggestions(){
-  var tags={},affects={};
+  var tags={},affects={},persons={};
   annotations.forEach(function(a){
     (a.tags||[]).forEach(function(x){tags[x]=true;});
     (a.analysis.affects||[]).forEach(function(x){affects[x]=true;});
+    (a.personMentions||[]).forEach(function(x){persons[x]=true;});
   });
   $('tagSuggestions').innerHTML='';
   Object.keys(tags).sort().forEach(function(x){var o=document.createElement('option');o.value=x;$('tagSuggestions').appendChild(o);});
   $('affectSuggestions').innerHTML='';
   Object.keys(affects).sort().forEach(function(x){var o=document.createElement('option');o.value=x;$('affectSuggestions').appendChild(o);});
+  $('personSuggestions').innerHTML='';
+  Object.keys(persons).sort().forEach(function(x){var o=document.createElement('option');o.value=x;$('personSuggestions').appendChild(o);});
 }
 
 $('annotationForm').querySelectorAll('input,select,textarea').forEach(function(el){
@@ -956,7 +978,7 @@ function renderAnnotationList(){
     if(scope==='current'&&currentEntry&&currentDoc&&(a.target.entryId!==currentEntry.entryId||a.target.documentId!==currentDoc.documentId))return false;
     if(scope==='current'&&!currentEntry)return false;
     if(q){
-      var hay=[a.comment,(a.tags||[]).join(' '),(a.analysis.affects||[]).join(' '),annotationSnippet(a)].join(' ').toLocaleLowerCase('fr');
+      var hay=[a.comment,(a.tags||[]).join(' '),(a.personMentions||[]).join(' '),(a.analysis.affects||[]).join(' '),annotationSnippet(a)].join(' ').toLocaleLowerCase('fr');
       if(hay.indexOf(q)<0)return false;
     }
     return true;
@@ -987,6 +1009,9 @@ function renderAnnotationList(){
     if(a.analysis.valence){
       var c=document.createElement('span');c.className='chip '+a.analysis.valence;c.textContent=a.analysis.valence;chips.appendChild(c);
     }
+    (a.personMentions||[]).slice(0,3).forEach(function(person){
+      var c=document.createElement('span');c.className='chip';c.textContent='👤 '+person;chips.appendChild(c);
+    });
     (a.tags||[]).slice(0,5).forEach(function(tag){
       var c=document.createElement('span');c.className='chip';c.textContent='#'+tag;chips.appendChild(c);
     });
