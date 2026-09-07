@@ -87,7 +87,7 @@ function downloadJson(filename, object) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
-  a.style.display = 'none';
+  a.className = 'hidden-anchor';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -114,6 +114,25 @@ function sourceMime(file, type) {
   }[type] || 'application/octet-stream';
 }
 
+function inferNotebookId(fileName) {
+  const base = String(fileName || '').replace(/\.[^.]+$/, '');
+  let match = base.match(/\bcahier[\s_\-.]*(\d{1,4})\b/i);
+  if (!match) match = base.match(/\b(?:notebook|carnet)[\s_\-.]*(\d{1,4})\b/i);
+  if (!match) return null;
+  return 'CAHIER-' + String(Number(match[1]));
+}
+
+function maybeSuggestDocumentFromFile(fileName) {
+  const suggested = inferNotebookId(fileName);
+  if (!suggested) return;
+  const current = $('documentId').value.trim();
+  if (!current || current === 'JOURNAL-01' || current === 'JOURNAL') {
+    $('documentId').value = suggested;
+    $('documentLabel').value = 'Cahier ' + suggested.replace('CAHIER-', '');
+    setStatus('Identifiant de document proposé depuis le nom du fichier : ' + suggested + ' (modifiable).');
+  }
+}
+
 function nextSourceId(kind) {
   const prefix = kind === 'image' ? 'IMAGE' : 'TRANSCRIPTION';
   const count = state.sources.filter(s => s.assetId.startsWith(prefix + '-')).length + 1;
@@ -132,6 +151,7 @@ async function addFiles(fileList, requestedKind) {
     if (duplicate) continue;
 
     const assetId = nextSourceId(requestedKind === 'image' ? 'image' : 'transcription');
+    if (requestedKind !== 'image') maybeSuggestDocumentFromFile(file.name);
     const source = {
       assetId,
       kind: requestedKind === 'image' ? 'image' : 'transcription',
@@ -240,18 +260,14 @@ function renderSources() {
       const img = document.createElement('img');
       img.src = preview;
       img.alt = 'Aperçu local ' + source.fileName;
-      img.style.maxWidth = '180px';
-      img.style.maxHeight = '120px';
-      img.style.marginTop = '8px';
-      img.style.border = '1px solid #d6dce2';
-      img.style.borderRadius = '5px';
+      img.className = 'source-preview';
       card.appendChild(img);
     }
 
     if (source.extractionMessages.length) {
       const msg = document.createElement('div');
       msg.className = 'small';
-      msg.style.marginTop = '6px';
+      msg.classList.add('mt-6');
       msg.textContent = source.extractionMessages.join(' · ');
       card.appendChild(msg);
     }
@@ -575,7 +591,7 @@ function renderBlocks() {
     head.append(label, small);
     const preview = document.createElement('div');
     preview.className = 'small';
-    preview.style.marginTop = '5px';
+    preview.classList.add('block-preview');
     preview.textContent = block.text.slice(0, 160).replace(/\s+/g, ' ') + (block.text.length > 160 ? '…' : '');
     card.append(head, preview);
     card.addEventListener('click', () => selectBlock(block.blockId));
@@ -667,12 +683,15 @@ function entryRefsForRange(ranges, start, end) {
   };
 }
 
-function createEntry(text, index, refs, suggestedLabel = null, suggestedDate = null) {
+function createEntry(text, index, refs, suggestedLabel = null, temporal = null) {
+  temporal = temporal || { date: null, dateStart: null, dateEnd: null, datePrecision: 'unknown' };
   return {
     internalId: crypto.randomUUID ? crypto.randomUUID() : 'E-' + Date.now() + '-' + Math.random(),
     entryId: 'ENTREE-' + String(index + 1).padStart(4, '0'),
-    date: suggestedDate,
-    datePrecision: suggestedDate ? 'exact' : 'unknown',
+    date: temporal.date || null,
+    dateStart: temporal.dateStart || temporal.date || null,
+    dateEnd: temporal.dateEnd || temporal.date || null,
+    datePrecision: temporal.datePrecision || (temporal.date ? 'exact' : 'unknown'),
     sourceLabel: suggestedLabel || ('Entrée ' + (index + 1)),
     pageRefs: refs.pageRefs || [],
     assetRefs: refs.assetRefs || [],
@@ -705,13 +724,38 @@ const frenchMonths = {
   décembre: '12', decembre: '12'
 };
 
-function parseFrenchDate(line) {
-  const normalized = line.toLocaleLowerCase('fr').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+function compactDateToIso(value) {
+  const m = String(value || '').match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (!m) return null;
+  const iso = m[1] + '-' + m[2] + '-' + m[3];
+  const d = new Date(iso + 'T00:00:00Z');
+  return Number.isNaN(d.getTime()) ? null : iso;
+}
+
+function parseTemporalLabel(line) {
+  const raw = String(line || '').trim();
+  const compactRange = raw.match(/\b(\d{8})\s*(?:à|au|a|–|—|-)\s*(\d{8})\b/i);
+  if (compactRange) {
+    const start = compactDateToIso(compactRange[1]);
+    const end = compactDateToIso(compactRange[2]);
+    if (start && end) return { date: null, dateStart: start, dateEnd: end, datePrecision: 'range' };
+  }
+
+  const compactSingle = raw.match(/\b(\d{8})\b/);
+  if (compactSingle) {
+    const date = compactDateToIso(compactSingle[1]);
+    if (date) return { date, dateStart: date, dateEnd: date, datePrecision: 'exact' };
+  }
+
+  const normalized = raw.toLocaleLowerCase('fr').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
   const match = normalized.match(/(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)?\s*(\d{1,2})\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)\s+(\d{4})\b/);
-  if (!match) return null;
+  if (!match) return { date: null, dateStart: null, dateEnd: null, datePrecision: 'unknown' };
   const day = match[1].padStart(2, '0');
-  const month = frenchMonths[match[2]] || frenchMonths[match[2].replace('é', 'e').replace('û', 'u')];
-  return month ? match[3] + '-' + month + '-' + day : null;
+  const month = frenchMonths[match[2]];
+  const date = month ? match[3] + '-' + month + '-' + day : null;
+  return date
+    ? { date, dateStart: date, dateEnd: date, datePrecision: 'exact' }
+    : { date: null, dateStart: null, dateEnd: null, datePrecision: 'unknown' };
 }
 
 async function detectDateEntries() {
@@ -745,9 +789,9 @@ async function detectDateEntries() {
     const raw = composite.text.slice(start, end).trim();
     if (!raw) continue;
     const line = raw.split('\n')[0].trim();
-    const date = parseFrenchDate(line);
+    const temporal = parseTemporalLabel(line);
     const refs = entryRefsForRange(composite.ranges, start, end);
-    entries.push(createEntry(raw, entries.length, refs, line.slice(0, 100), date));
+    entries.push(createEntry(raw, entries.length, refs, line.slice(0, 100), temporal));
   }
 
   state.entries = entries;
@@ -793,6 +837,8 @@ function splitEntry(index, cursor) {
     entryId: entry.entryId + '-B',
     sourceLabel: entry.sourceLabel + ' — suite',
     date: null,
+    dateStart: null,
+    dateEnd: null,
     datePrecision: 'unknown',
     text: right,
     textHash: null,
@@ -864,17 +910,35 @@ function renderEntries() {
     idInput.addEventListener('change', () => { entry.entryId = idInput.value.trim(); entry.textHash = null; });
     idLabel.appendChild(idInput);
 
-    const dateLabel = document.createElement('label');
-    dateLabel.textContent = 'Date';
-    const dateInput = document.createElement('input');
-    dateInput.type = 'text';
-    dateInput.placeholder = 'AAAA-MM-JJ';
-    dateInput.value = entry.date || '';
-    dateInput.addEventListener('change', () => {
-      entry.date = dateInput.value.trim() || null;
-      entry.datePrecision = entry.date ? 'exact' : 'unknown';
+    const startLabel = document.createElement('label');
+    startLabel.textContent = 'Date début';
+    const startInput = document.createElement('input');
+    startInput.type = 'text';
+    startInput.placeholder = 'AAAA-MM-JJ';
+    startInput.value = entry.dateStart || entry.date || '';
+    startInput.addEventListener('change', () => {
+      entry.dateStart = startInput.value.trim() || null;
+      if (!entry.dateEnd && entry.dateStart) entry.dateEnd = entry.dateStart;
+      entry.date = entry.dateStart && entry.dateStart === entry.dateEnd ? entry.dateStart : null;
+      entry.datePrecision = entry.date ? 'exact' : (entry.dateStart && entry.dateEnd ? 'range' : 'unknown');
+      renderEntries();
     });
-    dateLabel.appendChild(dateInput);
+    startLabel.appendChild(startInput);
+
+    const endLabel = document.createElement('label');
+    endLabel.textContent = 'Date fin';
+    const endInput = document.createElement('input');
+    endInput.type = 'text';
+    endInput.placeholder = 'AAAA-MM-JJ';
+    endInput.value = entry.dateEnd || entry.date || '';
+    endInput.addEventListener('change', () => {
+      entry.dateEnd = endInput.value.trim() || null;
+      if (!entry.dateStart && entry.dateEnd) entry.dateStart = entry.dateEnd;
+      entry.date = entry.dateStart && entry.dateStart === entry.dateEnd ? entry.dateStart : null;
+      entry.datePrecision = entry.date ? 'exact' : (entry.dateStart && entry.dateEnd ? 'range' : 'unknown');
+      renderEntries();
+    });
+    endLabel.appendChild(endInput);
 
     const titleLabel = document.createElement('label');
     titleLabel.className = 'stretch';
@@ -888,11 +952,10 @@ function renderEntries() {
     pages.className = 'small';
     pages.textContent = entry.pageRefs.length ? 'p. ' + entry.pageRefs.join(', ') : 'sans page';
 
-    head.append(idLabel, dateLabel, titleLabel, pages);
+    head.append(idLabel, startLabel, endLabel, titleLabel, pages);
 
     const refsLabel = document.createElement('label');
-    refsLabel.style.display = 'block';
-    refsLabel.style.marginTop = '7px';
+    refsLabel.className = 'entry-refs';
     refsLabel.textContent = 'Assets liés (IDs séparés par des virgules)';
     const refsInput = document.createElement('input');
     refsInput.value = entry.assetRefs.join(', ');
@@ -943,7 +1006,7 @@ function renderEntries() {
 
     const hashLine = document.createElement('div');
     hashLine.className = 'small';
-    hashLine.style.marginTop = '6px';
+    hashLine.classList.add('hash-line');
     hashLine.textContent = entry.textHash ? 'SHA-256 ' + entry.textHash : 'hash à recalculer';
 
     card.append(head, refsLabel, textarea, actions, hashLine);
@@ -993,7 +1056,11 @@ function validate() {
     ids.set(entry.entryId, (ids.get(entry.entryId) || 0) + 1);
     if (!entry.text.trim()) push('error', label + ' : texte vide.');
     if (!entry.textHash) push('warn', label + ' : hash du texte non calculé.');
-    if (entry.date && !/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) push('warn', label + ' : date non ISO exacte (' + entry.date + ').');
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    if (entry.date && !iso.test(entry.date)) push('warn', label + ' : date non ISO exacte (' + entry.date + ').');
+    if (entry.dateStart && !iso.test(entry.dateStart)) push('warn', label + ' : dateStart non ISO (' + entry.dateStart + ').');
+    if (entry.dateEnd && !iso.test(entry.dateEnd)) push('warn', label + ' : dateEnd non ISO (' + entry.dateEnd + ').');
+    if (entry.dateStart && entry.dateEnd && entry.dateStart > entry.dateEnd) push('error', label + ' : dateStart est postérieure à dateEnd.');
     entry.assetRefs.forEach(id => {
       if (!state.sources.some(s => s.assetId === id)) push('warn', label + ' : asset inconnu ' + id + '.');
     });
@@ -1052,6 +1119,8 @@ function entryForExport(entry) {
   return {
     entryId: entry.entryId,
     date: entry.date || null,
+    dateStart: entry.dateStart || entry.date || null,
+    dateEnd: entry.dateEnd || entry.date || null,
     datePrecision: entry.datePrecision || 'unknown',
     sourceLabel: entry.sourceLabel || null,
     pageRefs: unique(entry.pageRefs).sort((a, b) => a - b),
@@ -1076,7 +1145,7 @@ async function buildCorpus() {
   await computeEntryHashes();
   const meta = projectMetadata();
   return {
-    schemaVersion: '0.2.0',
+    schemaVersion: '0.3.0',
     corpusId: meta.corpusId,
     version: meta.version,
     title: meta.title,
@@ -1177,6 +1246,11 @@ async function loadWorkState(file) {
   state.sources = Array.isArray(parsed.sources) ? parsed.sources : [];
   state.blocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
   state.entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+  state.entries.forEach(entry => {
+    if (!('dateStart' in entry)) entry.dateStart = entry.date || null;
+    if (!('dateEnd' in entry)) entry.dateEnd = entry.date || null;
+    if (!entry.datePrecision) entry.datePrecision = entry.date ? 'exact' : 'unknown';
+  });
   state.transformations = Array.isArray(parsed.transformations) ? parsed.transformations : [];
   state.validation = Array.isArray(parsed.validation) ? parsed.validation : [];
   state.sourceRevision = Number.isInteger(parsed.sourceRevision) ? parsed.sourceRevision : 0;
