@@ -19,6 +19,8 @@
     button:disabled{opacity:.45;cursor:not-allowed}
     .file-label input{display:none}
     .status{font-size:.88rem;margin-left:auto}
+    .identity-badge{font-size:.78rem;padding:4px 7px;border:1px solid #b9c2ca;border-radius:999px;background:#f7f8fa;color:#4f5c68}
+    .identity-badge.known{border-color:#9fc2a6;background:#eff8f1;color:#365d3d}
     .notice{margin-top:9px;padding:8px 10px;border:1px solid #aeb6bf;background:#f7f8fa;border-radius:7px;font-size:.86rem}
     .notice.warning{border-color:#d7b56d;background:#fff7df}
     .hidden{display:none!important}
@@ -113,6 +115,7 @@
     <label id="portableLoadLabel" class="file-label hidden">2. Charger un travail<input id="workspaceFile" type="file" accept="application/json,.json,.jsonl"></label>
     <button id="portableSaveBtn" class="hidden has-tip tip-down" title="Sauvegarder les annotations enregistrées" data-tooltip="Télécharge une copie locale de toutes les annotations déjà enregistrées.">Sauvegarder mon travail</button>
     <button id="exportBtn" class="has-tip tip-down" title="Exporter la remise" data-tooltip="Crée la remise à partir des annotations déjà enregistrées. Une annotation en cours doit d’abord être enregistrée ou annulée.">Exporter la remise</button>
+    <span id="identityBadge" class="identity-badge hidden" title="Identité détectée automatiquement"></span>
     <span id="status" class="status">Initialisation…</span>
   </div>
   <div id="modeNotice" class="notice"></div>
@@ -219,6 +222,8 @@ var selectionState=null;
 var pendingSelection=null;
 var editingAnnotationId=null;
 var annotations=[];
+var resolvedAnnotatorId=null;
+var resolvedIdentitySource=null;
 var savingAnnotation=false;
 var formTouched=false;
 var directFsAvailable=false;
@@ -243,6 +248,57 @@ var safeArray=function(v,maxItems,maxLen){
   return v.slice(0,maxItems||100).map(function(x){return safeString(x,maxLen||200);}).filter(Boolean);
 };
 var enumValue=function(v,allowed,fallback){return allowed.indexOf(v)>=0?v:fallback;};
+
+function normalizeAnnotatorId(value){
+  if(typeof value!=='string')return null;
+  var v=value.trim();
+  if(!v)return null;
+  return v.slice(0,300);
+}
+
+function setResolvedIdentity(id,source){
+  var normalized=normalizeAnnotatorId(id);
+  if(!normalized)return false;
+  resolvedAnnotatorId=normalized;
+  resolvedIdentitySource=source||'unknown';
+  $('identityBadge').textContent='Utilisateur : '+normalized;
+  $('identityBadge').title='Identité détectée automatiquement · source : '+resolvedIdentitySource;
+  $('identityBadge').classList.remove('hidden');
+  $('identityBadge').classList.add('known');
+  log('Identité détectée ('+resolvedIdentitySource+').');
+  return true;
+}
+
+function resolveIdentityFromUrl(){
+  try{
+    var params=new URLSearchParams(location.search);
+    return setResolvedIdentity(params.get('annotatorId'),'url');
+  }catch(_){return false;}
+}
+
+async function resolveIdentityFromWorkspace(){
+  if(!workspaceHandle)return false;
+  var names=['.journallab-identity.json','identity.json'];
+  for(var i=0;i<names.length;i++){
+    try{
+      var fh=await workspaceHandle.getFileHandle(names[i]);
+      var file=await fh.getFile();
+      var parsed=JSON.parse(await file.text());
+      if(setResolvedIdentity(parsed&&parsed.annotatorId,'workspace:'+names[i]))return true;
+    }catch(err){
+      if(err.name!=='NotFoundError')log('Identité locale ignorée ('+names[i]+') : '+err.message);
+    }
+  }
+  return false;
+}
+
+function resolveIdentityFromAnnotations(){
+  if(resolvedAnnotatorId||!annotations.length)return false;
+  var ids=annotations.map(function(a){return normalizeAnnotatorId(a.annotatorId);}).filter(Boolean);
+  var uniqueIds=Array.from(new Set(ids));
+  if(uniqueIds.length===1)return setResolvedIdentity(uniqueIds[0],'travail existant');
+  return false;
+}
 
 function setAnnotationFormEnabled(enabled){
   var form=$('annotationForm');
@@ -445,6 +501,7 @@ $('workspaceFile').addEventListener('change',async function(e){
       else throw new Error('Format de travail non reconnu');
     }
     annotations=loaded;
+    resolveIdentityFromAnnotations();
     resetEditor();
     setDirty(false);
     refreshAll();
@@ -724,6 +781,7 @@ $('chooseWorkspace').onclick=async function(){
     workspaceHandle=await window.showDirectoryPicker({mode:'readwrite'});
     updateStatus();
     log('Workspace sélectionné : '+workspaceHandle.name);
+    await resolveIdentityFromWorkspace();
     await loadExistingAnnotations();
   }catch(err){
     if(err.name!=='AbortError')log('ERREUR workspace : '+err.name+' — '+err.message);
@@ -742,6 +800,7 @@ async function loadExistingAnnotations(){
     if(err.name==='NotFoundError')log('Aucun annotations.jsonl existant : il sera créé au premier enregistrement.');
     else throw err;
   }
+  resolveIdentityFromAnnotations();
   setDirty(false);
   refreshAll();
   checkCorpusCompatibility();
@@ -753,7 +812,7 @@ function buildAnnotationFromForm(existing){
     schemaVersion:'0.1.0',
     annotationId:existing?existing.annotationId:uuid(),
     corpusId:corpus.corpusId,
-    annotatorId:existing?existing.annotatorId:null,
+    annotatorId:existing?(existing.annotatorId||resolvedAnnotatorId):resolvedAnnotatorId,
     target:{
       scope:'segment',
       documentId:currentDoc.documentId,
@@ -999,6 +1058,7 @@ window.addEventListener('beforeunload',function(e){
   if(portableMode&&dirty){e.preventDefault();e.returnValue='';}
 });
 
+resolveIdentityFromUrl();
 detectStorageMode();
 setAnnotationFormEnabled(false);
 updateWorkflowUI();
