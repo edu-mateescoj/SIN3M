@@ -212,8 +212,11 @@ var currentDoc=null;
 var currentEntry=null;
 var workspaceHandle=null;
 var selectionState=null;
+var pendingSelection=null;
 var editingAnnotationId=null;
 var annotations=[];
+var savingAnnotation=false;
+var formTouched=false;
 var directFsAvailable=false;
 var portableMode=false;
 var dirty=false;
@@ -236,6 +239,58 @@ var safeArray=function(v,maxItems,maxLen){
   return v.slice(0,maxItems||100).map(function(x){return safeString(x,maxLen||200);}).filter(Boolean);
 };
 var enumValue=function(v,allowed,fallback){return allowed.indexOf(v)>=0?v:fallback;};
+
+function setAnnotationFormEnabled(enabled){
+  var form=$('annotationForm');
+  form.classList.toggle('annotation-form-disabled',!enabled);
+  form.querySelectorAll('input,select,textarea').forEach(function(el){el.disabled=!enabled;});
+  $('formBlockedNote').classList.toggle('hidden',enabled);
+}
+
+function updateWorkflowUI(){
+  var hasTarget=!!selectionState;
+  $('wfSelect').className='workflow-step '+(hasTarget?'done':'active');
+  if(!hasTarget){
+    $('wfAnalyze').className='workflow-step locked';
+    $('wfSave').className='workflow-step locked';
+  }else if(formTouched){
+    $('wfAnalyze').className='workflow-step done';
+    $('wfSave').className='workflow-step active';
+  }else{
+    $('wfAnalyze').className='workflow-step active';
+    $('wfSave').className='workflow-step';
+  }
+  $('selectionPreview').classList.toggle('locked',hasTarget);
+}
+
+function setPendingSelectionInfo(){
+  if(editingAnnotationId){
+    $('pendingSelectionInfo').textContent='Modification d’une annotation enregistrée.';
+    $('captureSelection').disabled=true;
+    return;
+  }
+  if(pendingSelection){
+    $('pendingSelectionInfo').textContent='Sélection prête : '+(pendingSelection.end-pendingSelection.start)+' caractère(s).';
+    $('captureSelection').disabled=false;
+  }else if(selectionState){
+    $('pendingSelectionInfo').textContent='Passage figé. Vous pouvez remplir le formulaire.';
+    $('captureSelection').disabled=false;
+  }else{
+    $('pendingSelectionInfo').textContent=currentEntry?'Sélectionnez un passage dans le texte.':'Aucune entrée sélectionnée.';
+    $('captureSelection').disabled=true;
+  }
+}
+
+function confirmLeaveEditor(){
+  if(!selectionState)return true;
+  return confirm('Une annotation est en cours. Continuer abandonnera la sélection ou les modifications non enregistrées. Continuer ?');
+}
+
+function showSaveSuccess(message){
+  $('saveSuccess').textContent=message;
+  $('saveSuccess').classList.remove('hidden');
+  setTimeout(function(){$('saveSuccess').classList.add('hidden');},2500);
+}
 
 function uuid(){
   return globalThis.crypto&&globalThis.crypto.randomUUID?globalThis.crypto.randomUUID():'ANN-'+Date.now()+'-'+Math.random().toString(16).slice(2);
@@ -427,10 +482,10 @@ function renderEntries(){
 }
 
 function openEntry(doc,entry){
+  if((!currentEntry||currentEntry.entryId!==entry.entryId||!currentDoc||currentDoc.documentId!==doc.documentId)&&!confirmLeaveEditor())return;
   currentDoc=doc;
   currentEntry=entry;
-  selectionState=null;
-  editingAnnotationId=null;
+  pendingSelection=null;
   document.querySelectorAll('.entry-btn').forEach(function(x){
     x.classList.toggle('active',x.dataset.entryId===entry.entryId&&x.dataset.documentId===doc.documentId);
   });
@@ -440,6 +495,7 @@ function openEntry(doc,entry){
   resetEditor();
   renderEntryText();
   renderAnnotationList();
+  setPendingSelectionInfo();
 }
 
 function renderEntryText(focusId){
@@ -454,9 +510,10 @@ function renderEntryText(focusId){
   var anns=annotations.filter(function(a){
     return a.target.documentId===currentDoc.documentId&&a.target.entryId===currentEntry.entryId&&a.target.start<text.length&&a.target.end>0;
   });
+  var draftTarget=selectionState&&!editingAnnotationId?selectionState:null;
   $('entryAnnotationCount').textContent=String(anns.length);
 
-  if(!anns.length){
+  if(!anns.length&&!draftTarget){
     box.textContent=text;
     return;
   }
@@ -467,67 +524,100 @@ function renderEntryText(focusId){
     boundaryMap[Math.max(0,Math.min(text.length,a.target.start))]=true;
     boundaryMap[Math.max(0,Math.min(text.length,a.target.end))]=true;
   });
+  if(draftTarget){
+    boundaryMap[Math.max(0,Math.min(text.length,draftTarget.start))]=true;
+    boundaryMap[Math.max(0,Math.min(text.length,draftTarget.end))]=true;
+  }
   var bounds=Object.keys(boundaryMap).map(Number).sort(function(a,b){return a-b;});
 
   for(var i=0;i<bounds.length-1;i++){
     var s=bounds[i],e=bounds[i+1];
     if(e<=s)continue;
     var covering=anns.filter(function(a){return a.target.start<e&&a.target.end>s;});
-    if(!covering.length){
+    var inDraft=!!(draftTarget&&draftTarget.start<e&&draftTarget.end>s);
+    if(!covering.length&&!inDraft){
       box.appendChild(document.createTextNode(text.slice(s,e)));
       continue;
     }
     var span=document.createElement('span');
-    span.className='ann-mark';
+    span.className=(covering.length?'ann-mark ':'')+(inDraft?'draft-mark':'');
     span.textContent=text.slice(s,e);
-    span.dataset.annotationIds=covering.map(function(a){return a.annotationId;}).join('|');
-    span.title=covering.length===1?'1 annotation':covering.length+' annotations superposées';
-    if(covering.length>1)span.setAttribute('data-count',String(covering.length));
-    if(focusId&&covering.some(function(a){return a.annotationId===focusId;}))span.classList.add('focused');
-    span.onclick=function(ev){
-      ev.stopPropagation();
-      var ids=this.dataset.annotationIds.split('|');
-      openAnnotation(ids[0]);
-    };
+    if(covering.length){
+      span.dataset.annotationIds=covering.map(function(a){return a.annotationId;}).join('|');
+      span.title=covering.length===1?'1 annotation enregistrée':covering.length+' annotations enregistrées superposées';
+      if(covering.length>1)span.setAttribute('data-count',String(covering.length));
+      if(focusId&&covering.some(function(a){return a.annotationId===focusId;}))span.classList.add('focused');
+      span.onclick=function(ev){
+        ev.stopPropagation();
+        var ids=this.dataset.annotationIds.split('|');
+        openAnnotation(ids[0]);
+      };
+    }else{
+      span.title='Passage sélectionné pour la nouvelle annotation';
+    }
     box.appendChild(span);
   }
 }
 
-$('captureSelection').onclick=function(){
-  if(!currentEntry)return;
+function readSelectionFromEntry(){
+  if(!currentEntry)return null;
   var sel=window.getSelection();
-  if(!sel||sel.rangeCount===0||sel.isCollapsed){
-    alert('Sélectionnez d’abord un passage dans le texte.');
-    return;
-  }
+  if(!sel||sel.rangeCount===0||sel.isCollapsed)return null;
   var range=sel.getRangeAt(0),container=$('entryText');
-  if(!container.contains(range.commonAncestorContainer)){
-    alert('La sélection doit se trouver dans le texte du journal.');
-    return;
-  }
+  if(!container.contains(range.commonAncestorContainer))return null;
   var pre=document.createRange();
   pre.selectNodeContents(container);
   pre.setEnd(range.startContainer,range.startOffset);
   var start=pre.toString().length;
   var text=range.toString();
   var end=start+text.length;
-  if(!text.trim()){
-    alert('Sélection vide.');
+  if(!text.trim())return null;
+  return {start:start,end:end,text:text};
+}
+
+function rememberPendingSelection(){
+  if(editingAnnotationId)return;
+  var captured=readSelectionFromEntry();
+  if(!captured)return;
+  pendingSelection=captured;
+  setPendingSelectionInfo();
+}
+
+$('entryText').addEventListener('mouseup',function(){setTimeout(rememberPendingSelection,0);});
+$('entryText').addEventListener('keyup',function(){setTimeout(rememberPendingSelection,0);});
+
+$('captureSelection').onclick=function(){
+  if(!currentEntry||editingAnnotationId)return;
+  var captured=pendingSelection||readSelectionFromEntry();
+  if(!captured){
+    alert('Sélectionnez d’abord un passage dans le texte.');
     return;
   }
-  editingAnnotationId=null;
-  selectionState={start:start,end:end};
-  clearFormFields();
-  $('editorMode').textContent='Nouvelle annotation';
-  $('selectionPreview').textContent=text;
-  $('saveAnnotation').disabled=false;
-  $('saveAnnotation').textContent='Enregistrer';
-  $('cancelEdit').classList.add('hidden');
-  $('deleteAnnotation').classList.add('hidden');
-  renderAnnotationList();
-  log('Sélection capturée : '+start+'–'+end+'. Aucun texte source ne sera stocké.');
-};
+  if(selectionState){
+    if(selectionState.start===captured.start&&selectionState.end===captured.end){
+      setPendingSelectionInfo();
+      return;
+    }
+    if(!confirm('Remplacer le passage actuellement figé par la nouvelle sélection ? Les champs déjà saisis seront conservés.'))return;
+  }
 
+  selectionState={start:captured.start,end:captured.end};
+  pendingSelection=null;
+  editingAnnotationId=null;
+  $('editorMode').textContent='Nouvelle annotation en cours';
+  $('selectionPreviewText').textContent=captured.text;
+  $('saveAnnotation').disabled=false;
+  $('saveAnnotation').textContent='Enregistrer l’annotation';
+  $('cancelEdit').classList.remove('hidden');
+  $('deleteAnnotation').classList.add('hidden');
+  setAnnotationFormEnabled(true);
+  formTouched=false;
+  updateWorkflowUI();
+  setPendingSelectionInfo();
+  renderEntryText();
+  renderAnnotationList();
+  log('Passage figé : '+selectionState.start+'–'+selectionState.end+'. Le texte source reste seulement affiché à l’écran.');
+};
 function clearFormFields(){
   $('spatial').value='unknown';
   $('social').value='unknown';
@@ -540,17 +630,23 @@ function clearFormFields(){
 
 function resetEditor(){
   selectionState=null;
+  pendingSelection=null;
   editingAnnotationId=null;
+  formTouched=false;
   $('editorMode').textContent='Nouvelle annotation';
-  $('selectionPreview').textContent='Aucun passage sélectionné.';
+  $('selectionPreviewText').textContent='Aucun passage sélectionné.';
   $('saveAnnotation').disabled=true;
-  $('saveAnnotation').textContent='Enregistrer';
+  $('saveAnnotation').textContent='Enregistrer l’annotation';
   $('cancelEdit').classList.add('hidden');
   $('deleteAnnotation').classList.add('hidden');
   clearFormFields();
+  setAnnotationFormEnabled(false);
+  updateWorkflowUI();
+  setPendingSelectionInfo();
 }
 
 function openAnnotation(id){
+  if(selectionState&&editingAnnotationId!==id&&!confirmLeaveEditor())return;
   var ann=annotations.find(function(a){return a.annotationId===id;});
   if(!ann)return;
   var ref=getEntryRef(ann.target.documentId,ann.target.entryId);
@@ -568,7 +664,7 @@ function openAnnotation(id){
   editingAnnotationId=id;
   selectionState={start:ann.target.start,end:ann.target.end};
   $('editorMode').textContent='Modification de '+id;
-  $('selectionPreview').textContent=annotationSnippet(ann);
+  $('selectionPreviewText').textContent=annotationSnippet(ann);
   $('spatial').value=(ann.analysis.spatialContext&&ann.analysis.spatialContext[0])||'unknown';
   $('social').value=(ann.analysis.socialSphere&&ann.analysis.socialSphere[0])||'unknown';
   $('valence').value=ann.analysis.valence||'uncertain';
@@ -577,9 +673,14 @@ function openAnnotation(id){
   $('tags').value=(ann.tags||[]).join(', ');
   $('comment').value=ann.comment||'';
   $('saveAnnotation').disabled=false;
-  $('saveAnnotation').textContent='Mettre à jour';
+  $('saveAnnotation').textContent='Mettre à jour l’annotation';
   $('cancelEdit').classList.remove('hidden');
   $('deleteAnnotation').classList.remove('hidden');
+  pendingSelection=null;
+  formTouched=false;
+  setAnnotationFormEnabled(true);
+  updateWorkflowUI();
+  setPendingSelectionInfo();
 
   renderEntryText(id);
   renderAnnotationList();
@@ -591,6 +692,7 @@ function openAnnotation(id){
 }
 
 $('cancelEdit').onclick=function(){
+  if(selectionState&&!confirm('Annuler l’annotation en cours ? Les informations non enregistrées seront perdues.'))return;
   resetEditor();
   renderEntryText();
   renderAnnotationList();
@@ -658,6 +760,7 @@ function buildAnnotationFromForm(existing){
 }
 
 $('saveAnnotation').onclick=async function(){
+  if(savingAnnotation)return;
   if(!corpus||!currentEntry||!selectionState){
     alert('Aucune sélection active.');
     return;
@@ -667,6 +770,8 @@ $('saveAnnotation').onclick=async function(){
     return;
   }
 
+  savingAnnotation=true;
+  $('saveAnnotation').disabled=true;
   var oldSnapshot=annotations.slice();
   var existing=null;
   if(editingAnnotationId){
@@ -684,10 +789,14 @@ $('saveAnnotation').onclick=async function(){
     log('Annotation '+action+'. Le texte source reste absent du fichier.');
     resetEditor();
     refreshAll();
+    showSaveSuccess(existing?'Annotation mise à jour.':'Annotation enregistrée.');
   }catch(err){
     annotations=oldSnapshot;
     log('ERREUR sauvegarde : '+err.message);
     alert('Échec de la sauvegarde.');
+    $('saveAnnotation').disabled=false;
+  }finally{
+    savingAnnotation=false;
   }
 };
 
@@ -740,6 +849,16 @@ function updateSuggestions(){
   $('affectSuggestions').innerHTML='';
   Object.keys(affects).sort().forEach(function(x){var o=document.createElement('option');o.value=x;$('affectSuggestions').appendChild(o);});
 }
+
+$('annotationForm').querySelectorAll('input,select,textarea').forEach(function(el){
+  var mark=function(){
+    if(!selectionState)return;
+    formTouched=true;
+    updateWorkflowUI();
+  };
+  el.addEventListener('input',mark);
+  el.addEventListener('change',mark);
+});
 
 $('filterValence').addEventListener('change',renderAnnotationList);
 $('filterScope').addEventListener('change',renderAnnotationList);
@@ -816,6 +935,10 @@ function downloadText(filename,text,mime){
 }
 
 $('portableSaveBtn').onclick=function(){
+  if(selectionState){
+    alert('Une annotation est en cours. Enregistrez-la ou annulez-la avant de sauvegarder le travail.');
+    return;
+  }
   var payload=safeAnnotations().map(function(a){return JSON.stringify(a);}).join('\n')+'\n';
   downloadText('annotations-journallab.jsonl',payload,'application/x-ndjson;charset=utf-8');
   setDirty(false);
@@ -824,6 +947,10 @@ $('portableSaveBtn').onclick=function(){
 };
 
 $('exportBtn').onclick=async function(){
+  if(selectionState){
+    alert('Une annotation est en cours. Enregistrez-la ou annulez-la avant d’exporter la remise.');
+    return;
+  }
   var exportObj={
     exportVersion:'0.1.0',
     corpusId:corpus&&corpus.corpusId?safeString(corpus.corpusId,300):null,
@@ -853,6 +980,9 @@ window.addEventListener('beforeunload',function(e){
 });
 
 detectStorageMode();
+setAnnotationFormEnabled(false);
+updateWorkflowUI();
+setPendingSelectionInfo();
 updateStatus();
 renderAnnotationList();
 </script>
